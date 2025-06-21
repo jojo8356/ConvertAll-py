@@ -294,6 +294,12 @@ Fahrenheit        = [R] x + 459.67 ; x - 459.67  #             # non-linear
 deg F             = [R] x + 459.67 ; x - 459.67  # Fahrenheit  # non-linear
 degree Fahrenheit = [R] x + 459.67 ; x - 459.67  #             # non-linear
 
+Gas mark          = [K] [(0.25, 383.15), (0.5, 393.15), (1.0, 413.15), \
+                    (2.0, 423.15), (3.0, 443.15), (4.0, 453.15), \
+                    (5.0, 463.15), (6.0, 473.15), (7.0, 493.15), \
+                    (8.0, 503.15), (9.0, 513.15), (10.0, 533.15)] \
+                    # # UK gas stove, non-linear
+
 [temp. diff.]
 C deg             = K        # Celsius degree
 Celsius degree    = C deg
@@ -810,6 +816,12 @@ MW                = megawatt        # megawatt
 gigawatt          = 1000 MW
 GW                = gigawatt        # gigawatt
 milliwatt         = 0.001 W
+decibel-milliwatt = [W] 10.0**(x/10.0) / 1000.0 ; \
+                    10.0 * log(x*1000.0) / log(10.0) \
+                    # # non-linear
+dBm               = [W] 10.0**(x/10.0) / 1000.0 ; \
+                    10.0 * log(x*1000.0) / log(10.0) \
+                    # decibel-milliwatts # non-linear
 horsepower        = 550 ft*lbf/sec
 hp                = horsepower      # horsepower
 metric horsepower = 75 kgf*m/s
@@ -874,24 +886,33 @@ cSt          = centistokes # centistokes
 # misc. units
 #
 [acceleration]
-gravity                = 9.80665 m/s^2
-galileo                = cm/s^2
+gravity                   = 9.80665 m/s^2
+galileo                   = cm/s^2
 [constant]
-gravity constant       = 6.673e-11 N*m^2/kg^2
-gas constant           = 8.314472 J/(mol*K)   # R
-Planck constant        = 6.62607015e-34 J*s
+gravity constant          = 6.673e-11 N*m^2/kg^2
+gas constant              = 8.314472 J/(mol*K)   # R
+Planck constant           = 6.62607015e-34 J*s
 [fuel consumpt.]
-mpg                    = mi/gal               # miles/gallon
-mpg imp                = mi/gallon imperial   # miles/gallon imp
-liter per 100 km       = [mpg] 3.785411784 / (x * 0.01609344) ; \
-                         3.785411784 / (x * 0.01609344) # # non-linear
+mpg                       = mi/gal               # miles/gallon
+mpg imp                   = mi/gallon imperial   # miles/gallon imp
+liter per 100 km          = [mpg] 3.785411784 / (x * 0.01609344) ; \
+                            3.785411784 / (x * 0.01609344) # # non-linear
+[EV efficiency]
+miles per kilowatt-hour   = mi/kWh
+miles per kWh             = mi/kWh               # miles per kilowatt-hour
+miles per gallon equiv    = 1/33.70 mi/kWh
+MPGe                      = miles per gallon equiv  # miles per gallon equiv
+watt-hours per kilometer  = [miles per kWh] 1000.0 / (x * 1.609344) ; \
+                            1000.0 / (x * 1.609344) # # non-linear
+kilowatt-hours per 100 km = [miles per kWh] 100.0 / (x * 1.609344) ; \
+                            100.0 / (x * 1.609344) # # non-linear
 [optical power]
-diopter                = m^-1                 # # American spelling
-dioptre                = diopter              # # British spelling
+diopter                   = m^-1                 # # American spelling
+dioptre                   = diopter              # # British spelling
 [permeability]
-darcy                  = 1 cm^2*centipoise/atm/s
-millidarcy             = 0.001 darcy
+darcy                     = 1 cm^2*centipoise/atm/s
+millidarcy                = 0.001 darcy
 [thermal resistance]
-Rvalue                 = R*ft^2*hr/Btu
-RSI                    = K*m^2/W              # R-value SI
-Rvalue SI              = RSI
+Rvalue                    = R*ft^2*hr/Btu
+RSI                       = K*m^2/W              # R-value SI
+Rvalue SI                 = RSI
