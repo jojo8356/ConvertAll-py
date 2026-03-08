@@ -2,7 +2,7 @@
 # units.dat, the units data file, version 0.8.0+
 #
 # ConvertAll, a units conversion program
-# Copyright (C) 2020, Douglas W. Bell
+# Copyright (C) 2026, Douglas W. Bell
 #
 # This is free software; you can redistribute it and/or modify it under the
 # terms of the GNU General Public License, Version 2.  This program is
@@ -66,6 +66,7 @@ amu                 = 1.660539066605e-27 kg  # atomic mass
 atomic mass unit    = amu
 dalton              = amu                # # atomic mass
 Da                  = amu                # dalton # atomic mass
+Planck mass         = 2.176434e−8 kg
 pound               = 0.45359237 kg      #        # avoirdupois
 lb                  = pound              # pound  # avoirdupois
 lbm                 = pound              # pound  # avoirdupois
@@ -116,6 +117,7 @@ megameter                = 1000 km
 angstrom                 = 1e-10 m
 fermi                    = 1e-15 m        # # nuclear sizes
 Bohr radius              = 5.291772109038e-11 m
+Planck length            = 1.616255e−35 m
 inch                     = 2.54 cm
 in                       = inch           # inch
 inches                   = inch
@@ -245,6 +247,7 @@ millisecond   = ms
 microsecond   = 1e-6 s
 ns            = 1e-9 s            # nanosecond
 nanosecond    = ns
+Planck time   = 5.391247e−44 s
 minute        = 60 s
 min           = minute            # minute
 hour          = 60 min
@@ -276,89 +279,91 @@ man year      = 52 man week
 # temperature
 #
 [temperature]
-K                 = !     # Kelvin
-Kelvin            = K
-deg K             = K     # Kelvin
-degree Kelvin     = K
+K                  = !     # Kelvin
+Kelvin             = K
+deg K              = K     # Kelvin
+degree Kelvin      = K
+Planck temperature = 1.416784e32 K
 
-C                 = [K] x + 273.15 ; x - 273.15  # Celsius  # non-linear
-Celsius           = [K] x + 273.15 ; x - 273.15  #          # non-linear
-deg C             = [K] x + 273.15 ; x - 273.15  # Celsius  # non-linear
-degree Celsius    = [K] x + 273.15 ; x - 273.15  #          # non-linear
+C                  = [K] x + 273.15 ; x - 273.15  # Celsius  # non-linear
+Celsius            = [K] x + 273.15 ; x - 273.15  #          # non-linear
+deg C              = [K] x + 273.15 ; x - 273.15  # Celsius  # non-linear
+degree Celsius     = [K] x + 273.15 ; x - 273.15  #          # non-linear
 
-R                 = 5/9.0 K     # Rankine
-Rankine           = R
-deg R             = R           # Rankine
-F                 = [R] x + 459.67 ; x - 459.67  # Fahrenheit  # non-linear
-Fahrenheit        = [R] x + 459.67 ; x - 459.67  #             # non-linear
-deg F             = [R] x + 459.67 ; x - 459.67  # Fahrenheit  # non-linear
-degree Fahrenheit = [R] x + 459.67 ; x - 459.67  #             # non-linear
+R                  = 5/9.0 K     # Rankine
+Rankine            = R
+deg R              = R           # Rankine
+F                  = [R] x + 459.67 ; x - 459.67  # Fahrenheit  # non-linear
+Fahrenheit         = [R] x + 459.67 ; x - 459.67  #             # non-linear
+deg F              = [R] x + 459.67 ; x - 459.67  # Fahrenheit  # non-linear
+degree Fahrenheit  = [R] x + 459.67 ; x - 459.67  #             # non-linear
 
-Gas mark          = [K] [(0.25, 383.15), (0.5, 393.15), (1.0, 413.15), \
-                    (2.0, 423.15), (3.0, 443.15), (4.0, 453.15), \
-                    (5.0, 463.15), (6.0, 473.15), (7.0, 493.15), \
-                    (8.0, 503.15), (9.0, 513.15), (10.0, 533.15)] \
-                    # # UK gas stove, non-linear
+Gas mark           = [K] [(0.25, 383.15), (0.5, 393.15), (1.0, 413.15), \
+                     (2.0, 423.15), (3.0, 443.15), (4.0, 453.15), \
+                     (5.0, 463.15), (6.0, 473.15), (7.0, 493.15), \
+                     (8.0, 503.15), (9.0, 513.15), (10.0, 533.15)] \
+                     # # UK gas stove, non-linear
 
 [temp. diff.]
-C deg             = K        # Celsius degree
-Celsius degree    = C deg
-F deg             = R        # Fahrenheit deg.
-Fahrenheit degree = F deg
+C deg              = K        # Celsius degree
+Celsius degree     = C deg
+F deg              = R        # Fahrenheit deg.
+Fahrenheit degree  = F deg
 
 
 #
 # electrical units
 #
 [current]
-A              = !              # ampere
-ampere         = A
-amp            = A
-milliampere    = 0.001 A
-milliamp       = milliampere
-mA             = milliampere    # milliampere
-microampere    = 0.001 mA
-kiloampere     = 1000 A
-kA             = kiloampere     # kiloampere
+A                 = !              # ampere
+ampere            = A
+amp               = A
+milliampere       = 0.001 A
+milliamp          = milliampere
+mA                = milliampere    # milliampere
+microampere       = 0.001 mA
+kiloampere        = 1000 A
+kA                = kiloampere     # kiloampere
 [charge]
-coulomb        = A*s
-amp hour       = A*hr
-mAh            = 0.001 amp hour # milliamp hour
-milliamp hour  = mAh
+coulomb           = A*s
+elementary charge = 1.602176634e−19 coulomb # # (1.602176634e−19 coulomb)
+amp hour          = A*hr
+mAh               = 0.001 amp hour # milliamp hour
+milliamp hour     = mAh
 [potential]
-volt           = W/A
-V              = volt           # volt
-millivolt      = 0.001 volt
-mV             = millivolt      # millivolt
-kilovolt       = 1000 volt
-kV             = kilovolt       # kilovolt
+volt              = W/A
+V                 = volt           # volt
+millivolt         = 0.001 volt
+mV                = millivolt      # millivolt
+kilovolt          = 1000 volt
+kV                = kilovolt       # kilovolt
 [resistance]
-ohm            = V/A
-milliohm       = 0.001 ohm
-microhm        = 0.001 milliohm
-kilohm         = 1000 ohm
+ohm               = V/A
+milliohm          = 0.001 ohm
+microhm           = 0.001 milliohm
+kilohm            = 1000 ohm
 [conductance]
-siemens        = A/V
+siemens           = A/V
 [capacitance]
-farad          = coulomb/V
-millifarad     = 0.001 farad
-microfarad     = 0.001 millifarad
-nanofarad      = 1e-9 farad
-picofarad      = 1e-12 farad
+farad             = coulomb/V
+millifarad        = 0.001 farad
+microfarad        = 0.001 millifarad
+nanofarad         = 1e-9 farad
+picofarad         = 1e-12 farad
 [magn. flux]
-weber          = V*s
-Wb             = weber          # weber
-maxwell        = 1e-8 Wb
+weber             = V*s
+Wb                = weber          # weber
+maxwell           = 1e-8 Wb
 [inductance]
-henry          = Wb/A
-H              = henry          # henry
-millihenry     = 0.001 henry
-mH             = millihenry     # millihenry
-microhenry     = 0.001 mH
+henry             = Wb/A
+H                 = henry          # henry
+millihenry        = 0.001 henry
+mH                = millihenry     # millihenry
+microhenry        = 0.001 mH
 [flux density]
-tesla          = Wb/m^2
-T              = tesla          # tesla
-gauss          = maxwell/cm^2
+tesla             = Wb/m^2
+T                 = tesla          # tesla
+gauss             = maxwell/cm^2
 
 
 #
@@ -892,6 +897,8 @@ galileo                   = cm/s^2
 gravity constant          = 6.673e-11 N*m^2/kg^2 # # (6.673e-11 N*m^2/kg^2)
 gas constant              = 8.314472 J/(mol*K)   # R # (8.314472 J/mol*K)
 Planck constant           = 6.62607015e-34 J*s   # # (6.62607015e-34 J*s)
+Boltzmann constant        = 1.380649e−23 J/K     # # (1.380649e−23 J/K)
+vacuum permittivity       = 8.8541878188e−12 farad/m  # # (8.8541878188e−12 farad/m)
 [fuel consumpt.]
 mpg                       = mi/gal               # miles/gallon
 mpg imp                   = mi/gallon imperial   # miles/gallon imp
