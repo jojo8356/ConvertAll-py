@@ -29,6 +29,10 @@ Exemples :
 Linux/macOS/WSL : Bash. Windows : Git Bash avec un Python Windows.
 Les bibliothèques Qt système doivent déjà être présentes. Le script ne les
 installe pas automatiquement et ne mélange pas PyQt5 avec PyQt6/PySide.
+Debian 12 / Python 3.11 : installer au besoin python3.11-venv (ensurepip),
+libpython3.11 (build natif), libgl1, libegl1, libxkbcommon0, libdbus-1-3,
+libxcb-xinerama0 et libxcb-cursor0. Un venv incomplet est réparé au prochain
+lancement une fois ensurepip disponible, sans supprimer le répertoire.
 Code de sortie : 0 = contrôles demandés réussis, 1 = échec, 2 = prérequis manquant.
 HELP
 }
@@ -247,16 +251,46 @@ existing_venv_python() {
         printf '%s\n' "$VENV/Scripts/python.exe"
     fi
 }
+prepare_venv() {
+    local interpreter version code
+    interpreter=$(existing_venv_python)
+    # Un échec de ensurepip peut laisser bin/python présent, mais aucun pip.
+    # La présence de l'exécutable seule ne prouve donc pas que le venv est prêt.
+    if [[ -n "$interpreter" ]] && "$interpreter" -m pip --version >/dev/null 2>&1; then
+        printf 'Venv dédié prêt : %s\n' "$VENV"
+        return 0
+    fi
+    if [[ -n "$interpreter" ]]; then
+        printf 'Venv incomplet détecté ; réparation sans supprimer le répertoire.\n'
+    fi
+    if ! "$BASE_PYTHON" -c 'import importlib.util, sys; sys.exit(0 if importlib.util.find_spec("ensurepip") else 2)'; then
+        version=$("$BASE_PYTHON" -c 'import sys; print("{}.{}".format(*sys.version_info[:2]))')
+        printf '\nERREUR : ensurepip est absent pour Python %s.\n' "$version" >&2
+        printf 'Sur Debian/Ubuntu, exécuter vous-même :\n' >&2
+        printf '  sudo apt-get update\n  sudo apt-get install python%s-venv\n' "$version" >&2
+        printf 'Puis relancer ce script : il réparera le venv incomplet.\n' >&2
+        return 2
+    fi
+    code=0
+    # Refaire venv sur ce répertoire complète notamment le bootstrap de pip.
+    # Pas de --clear / rm -rf : les autres fichiers ne sont pas supprimés.
+    "$BASE_PYTHON" -m venv "$VENV" || code=$?
+    if [[ "$code" -ne 0 ]]; then
+        printf 'Création/réparation du venv en échec ; voir le message ci-dessus.\n' >&2
+        return "$code"
+    fi
+    interpreter=$(existing_venv_python)
+    if [[ -z "$interpreter" ]] || ! "$interpreter" -m pip --version; then
+        printf 'ERREUR : le venv ne dispose toujours pas de pip.\n' >&2
+        return 1
+    fi
+    return 0
+}
 READY=1
 if [[ "$DO_INSTALL" -eq 1 ]]; then
+    run_step '01-venv' prepare_venv
+    [[ "$LAST_CODE" -eq 0 ]] || READY=0
     TEST_PYTHON=$(existing_venv_python)
-    if [[ -z "$TEST_PYTHON" ]]; then
-        run_step '01-venv' "$BASE_PYTHON" -m venv "$VENV"
-        [[ "$LAST_CODE" -eq 0 ]] || READY=0
-        TEST_PYTHON=$(existing_venv_python)
-    else
-        record_skip '01-venv' 'venv dédié déjà présent'
-    fi
     if [[ "$READY" -eq 1 && -n "$TEST_PYTHON" ]]; then
         dependencies=(-r "$ROOT/requirements-test.txt")
         if [[ "$DO_BUILD" -eq 1 ]]; then dependencies+=(-r "$ROOT/requirements-build.txt"); fi
@@ -275,7 +309,7 @@ else
     record_skip '02-dependances' '--no-install'
 fi
 
-if [[ -n "$TEST_PYTHON" && -x "$TEST_PYTHON" ]]; then
+if [[ "$READY" -eq 1 && -n "$TEST_PYTHON" && -x "$TEST_PYTHON" ]]; then
     REPORT_PYTHON="$TEST_PYTHON"
     run_step '03-environnement' "$TEST_PYTHON" - "$REPORT_DIR/environment.json" "$ROOT" <<'PY'
 from datetime import datetime, timezone
@@ -318,6 +352,9 @@ except (OSError, subprocess.CalledProcessError):
     report.update(commit=None, branch=None, working_tree_dirty=None)
 output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 print(json.dumps(report, ensure_ascii=False, indent=2))
+if report.get('qt_import_error'):
+    print('ERREUR : import Qt5 impossible. Vérifier le venv et les dépendances système.')
+    sys.exit(2)
 if any(packages[name] for name in ('PyQt6', 'PySide6', 'PySide2')):
     print('ERREUR : bindings Qt mélangés. Relancer sans --no-install dans le venv dédié.')
     sys.exit(2)
@@ -325,6 +362,7 @@ PY
     [[ "$LAST_CODE" -eq 0 ]] || READY=0
 else
     READY=0
+    record_skip '03-environnement' 'venv ou installation des dépendances non prêt'
 fi
 
 SOURCE_OK=0
@@ -369,5 +407,6 @@ else
 fi
 
 finish
+if [[ "$READY" -ne 1 ]]; then exit 2; fi
 if [[ "$FAILED" -ne 0 || "$SOURCE_OK" -ne 1 ]]; then exit 1; fi
 exit 0
