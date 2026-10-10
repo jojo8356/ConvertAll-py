@@ -37,7 +37,7 @@ def input_hashes():
                                       'requirements-test.txt', 'requirements-build.txt',
                                       'pytest.ini', '.coveragerc', '.gitignore',
                                       '.gitattributes', 'convertall.desktop',
-                                      'test_all_qt5.sh', 'test_all_qt6.sh')]
+                                      'test_all_qt5.sh', 'test_all_qt6.sh', 'release_qt6.sh')]
     return {path.relative_to(ROOT).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in sorted(paths)}
 

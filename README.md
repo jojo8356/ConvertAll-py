@@ -4,13 +4,15 @@ ConvertAll permet de combiner librement les unités : pouces par décennie,
 mètres-livres, milles nautiques au cube… Ce dépôt maintient l'application
 **Python / PyQt6**, distincte de l'application Flutter actuelle de l'amont.
 
-**État : portage 0.9.0 à valider.** Aucun résultat Qt6 de production n'est
-revendiqué. Qt5 0.8.1 reste une référence séparée et immuable au commit
-`b10b8e7837e30a2ec9a957a9a2519e4ac0334db3`.
+**État : QA sources/bundles Qt6 verte au SHA `a72ee1d`** (4575 tests,
+90,70 % sur Linux et CI Ubuntu/Windows Python 3.11–3.14). Les nouvelles
+recettes Debian/AppImage restent à exécuter/valider au nouveau SHA ; elles
+ne certifient pas bureau réel/DPI/GPU. Qt5 0.8.1 reste une référence séparée
+et immuable au commit `b10b8e7837e30a2ec9a957a9a2519e4ac0334db3`.
 
 ## Lancer les sources
 
-Profil : **Python 3.11–3.14, PyQt6 6.11.0 / Qt 6.11.2 / SIP 13.13.0**.
+Profil : **Python 3.11–3.14, PyQt6 6.11.0 / Qt 6.11.2 / PyQt6-sip 13.13.0**.
 Utiliser un environnement dédié ; ne pas installer PyQt5/PySide avec PyQt6.
 
 ```bash
@@ -57,6 +59,21 @@ Qt5, installateur Unix isolé et archives source reproductibles. Le seuil reste
 **80 % de couverture combinée instructions/branches**, sous-processus inclus.
 La CI teste les quatre versions Python 3.11 à 3.14 sur Linux et Windows et
 construit les deux bundles seulement après réussite de tous les tests.
+
+## Release avec exécutables, `.deb` et `.AppImage`
+
+Sur Linux x86_64 Debian/Ubuntu, avec le venv de QA et les outils système prêts :
+
+```bash
+bash release_qt6.sh --wait-ci --draft
+```
+
+Le script impose la CI du SHA actuel, reteste les sources, construit/contrôle
+localement archive portable, `.deb` et AppImage, récupère les `.exe` Windows
+avec leur dossier complet depuis la même CI et vérifie les sources/checksums.
+Il crée un **brouillon non publié**, jamais Latest. Sans `--draft`, seuls les
+assets locaux sont préparés. Aucun pip/sudo/apt n'est exécuté par ce script.
+Voir [la procédure complète et les limites](doc/RELEASE_LINUX_FR.md).
 
 ## Diagnostics et publication
 

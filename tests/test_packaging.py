@@ -109,7 +109,9 @@ def test_archive_reproducible_checksum_commit_and_extracted_cli(committed_copy, 
                          '.github/workflows/qt6-release.yml', 'tests/test_gui.py',
                          'tools/release_source.py', 'tools/update_translations.py',
                          'requirements-qt6.txt', 'test_all_qt6.sh',
-                         'doc/LICENSE-GPL-3.0', 'doc/RELEASE_QT6_FR.md'):
+                         'doc/LICENSE-GPL-3.0', 'doc/RELEASE_QT6_FR.md',
+                         'release_qt6.sh', 'tools/release_qt6.py', 'tools/linux_release.py',
+                         'tools/appimage-lock.json', 'doc/RELEASE_LINUX_FR.md'):
             assert prefix + relative in paths
         assert not any('/.git/' in path or '/.venv/' in path or '__pycache__' in path for path in paths)
         # This archive is created by git from our own temporary commit. All

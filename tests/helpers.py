@@ -30,6 +30,6 @@ def copy_project(destination):
     for name in ('.gitignore', '.gitattributes', '.coveragerc', 'pytest.ini', 'README.md', 'install.py',
                  'uninstall.py', 'convertall.desktop', 'requirements-qt5.txt',
                  'requirements-qt6.txt', 'requirements-test.txt', 'requirements-build.txt',
-                 'test_all_qt5.sh', 'test_all_qt6.sh'):
+                 'test_all_qt5.sh', 'test_all_qt6.sh', 'release_qt6.sh'):
         shutil.copy2(ROOT / name, destination / name)
     return destination

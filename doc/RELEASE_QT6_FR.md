@@ -27,6 +27,18 @@ bash test_all_qt6.sh --no-install --python .venv/test-all-qt6/bin/python
 
 Le lanceur reteste tout puis construit/contrôle le bundle si la suite passe.
 
+### Deuxième retour utilisateur : sources/bundle et CI verts
+
+Au SHA **`a72ee1dc5b8cdfe0c58fef0f182f15530e94a081`**, l'utilisateur obtient
+**4575 PASS / 0 échecs / 0 erreurs / 0 skips**, 72,49 s pytest, **90,70 %**
+de couverture ; build Linux et checker natif PASS, arbre propre.
+La [CI 38082849472](https://github.com/jojo8356/ConvertAll-py/actions/runs/38082849472)
+est verte pour les huit tests et les deux bundles du **même SHA**.
+Ce rapport ne certifie ni le bureau réel ni les nouvelles recettes Debian/
+AppImage ajoutées ensuite : voir [RELEASE_LINUX_FR.md](RELEASE_LINUX_FR.md)
+et `release_qt6.sh`. Le lanceur release revalide son nouveau SHA et prépare
+exécutable Linux, `.deb`, `.AppImage`, ZIP Windows avec `.exe` et sources.
+
 Qt5 0.8.1 reste au SHA `b10b8e7837e30a2ec9a957a9a2519e4ac0334db3`.
 Ne pas modifier `v0.8.1` ni fabriquer ses assets depuis les sources Qt6.
 Le workflow Qt5 manuel extrait ce commit. Le nouveau workflow Qt6 teste le
@@ -172,10 +184,10 @@ fi
 test -x "$PYTHON"
 gh auth status
 test "$(gh api "repos/$REPO/commits/$SHA" --jq .sha)" = "$SHA"
-RUN_ID=$(gh run list --repo "$REPO" --workflow qt6-release.yml \
-  --branch "$BRANCH" --commit "$SHA" --status success --limit 30 \
-  --json databaseId,event --jq 'map(select(.event == "push")) | first | .databaseId // empty')
+RUN_ID=$(gh api "repos/$REPO/actions/workflows/qt6-release.yml/runs?branch=$BRANCH&head_sha=$SHA&event=push&status=success&per_page=100" \
+  --jq '.workflow_runs | map(select(.event == "push" and .conclusion == "success")) | first | .id // empty')
 test -n "$RUN_ID"
+test "$(gh api "repos/$REPO/actions/runs/$RUN_ID" --jq .head_sha)" = "$SHA"
 printf 'SHA=%s\nRUN_ID=%s\n' "$SHA" "$RUN_ID"
 gh run view "$RUN_ID" --repo "$REPO"
 # Utiliser un dossier neuf : gh refuse d'écraser des téléchargements existants.
