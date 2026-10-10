@@ -12,6 +12,8 @@ Cette release conserve **PyQt5**, sans migration Qt6.
 - CLI : `--test` réparé, codes de retour fiables, erreurs de précision et de
   domaine signalées ; `--version`, `--test-all` et `--gui-smoke-test` ajoutés.
 - Rechargement des dernières unités avec conversion effective à l'ouverture.
+- Validation des préférences décimales alignée sur le format Python : point
+  décimal indépendant de la locale système, séparateurs de milliers rejetés.
 - Décimal signé en complément à deux et fractions à dénominateurs puissances
   de deux corrigés ; fractions continues pour éviter les longues recherches
   sur les irrationnels/petites décimales ; valeurs non finies/overflow mieux traitées.

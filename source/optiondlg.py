@@ -12,7 +12,7 @@
 #*****************************************************************************
 
 import sys
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import (QLocale, Qt)
 from PyQt5.QtGui import (QDoubleValidator, QValidator)
 from PyQt5.QtWidgets import (QButtonGroup, QCheckBox, QDialog, QGridLayout,
                              QGroupBox, QHBoxLayout, QLabel, QLineEdit,
@@ -163,6 +163,14 @@ class OptionDlgDbl(OptionDlgItem):
         self.control = QLineEdit(repr(dlg.option.numData(key, min, max)),
                                        dlg.parentGroup())
         valid = QDoubleValidator(min, max, 6, self.control)
+        # This field displays repr() and stores values through float(): use the
+        # same decimal point regardless of the system's language. Otherwise a
+        # French/German validator rejects "2.5", or accepts grouping that
+        # Python cannot parse (e.g. "1,000"). Do not change the app's locale.
+        numberLocale = QLocale.c()
+        numberLocale.setNumberOptions(numberLocale.numberOptions() |
+                                      QLocale.RejectGroupSeparator)
+        valid.setLocale(numberLocale)
         self.control.setValidator(valid)
         dlg.addItem(self, self.control, label)
 

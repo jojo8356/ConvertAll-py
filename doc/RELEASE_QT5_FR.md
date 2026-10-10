@@ -90,6 +90,17 @@ Les résultats détaillés d'une exécution sont dans `build/test-results/` :
 contient versions, SHA Git, indicateur d'arbre sale et SHA256 des fichiers testés.
 Ils sont ignorés par Git et sauvegardés comme artefacts par la CI.
 
+### Retour de validation sur Debian en locale utilisateur
+
+Le lancement utilisateur au commit `e521ae3` a produit **4 474 succès et un
+échec**, couverture **89,98 %**, dans le contrôle générique de préférence
+numérique. Le validateur Qt dépendait de la locale système alors que le champ
+utilise `repr()` / `float()` avec un point décimal. Correctif ajouté : locale C
+limitée à ce validateur et rejet des séparateurs de milliers, sans modifier la
+locale générale de l'application. **27 contrôles de non-régression** C/français/
+allemand ont été ajoutés. Leur résultat et la nouvelle passe complète restent
+à confirmer par l'utilisateur ; aucun test n'a été relancé ici après ce retour.
+
 ### Pas encore validé ici
 
 - **CI distante Linux/Windows non exécutée** : le workflow est préparé, pas poussé.

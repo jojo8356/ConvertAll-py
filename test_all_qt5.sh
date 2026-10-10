@@ -338,8 +338,12 @@ report = {'utc': datetime.now(timezone.utc).isoformat(), 'python': sys.version,
           'qt_platform': os.environ.get('QT_QPA_PLATFORM'),
           'runner_sha256': hashlib.sha256((root / 'test_all_qt5.sh').read_bytes()).hexdigest()}
 try:
-    from PyQt5.QtCore import PYQT_VERSION_STR, qVersion
-    report.update(pyqt_binding=PYQT_VERSION_STR, qt_runtime=qVersion())
+    from PyQt5.QtCore import PYQT_VERSION_STR, QLocale, qVersion
+    qt_locale = QLocale()
+    report.update(pyqt_binding=PYQT_VERSION_STR, qt_runtime=qVersion(),
+                  qt_default_locale=qt_locale.name(),
+                  qt_decimal_point=qt_locale.decimalPoint(),
+                  qt_group_separator=qt_locale.groupSeparator())
 except Exception as error:
     report['qt_import_error'] = str(error)
 def git(*args):
