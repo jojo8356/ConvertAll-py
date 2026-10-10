@@ -1,16 +1,16 @@
 ; convertall-all.iss
 
-; Inno Setup installer script for ConvertAll, an RPN calculator
+; Inno Setup installer script for ConvertAll, a unit converter
 ; This will install for all users, admin rights are required.
 
 [Setup]
 AppName=ConvertAll
-AppVersion=0.8.0
+AppVersion=0.8.1
 DefaultDirName={pf}\ConvertAll
 DefaultGroupName=ConvertAll
 DisableProgramGroupPage=yes
 OutputDir=.
-OutputBaseFilename=convertall-0.8.0-install-all
+OutputBaseFilename=convertall-0.8.1-install-all
 PrivilegesRequired=poweruser
 SetupIconFile=convertall.ico
 Uninstallable=IsTaskSelected('adduninstall')
@@ -36,10 +36,10 @@ Type: filesandordirs; Name: "{app}\platforms"
 [Files]
 Source: "convertall.exe"; DestDir: "{app}"
 Source: "base_library.zip"; DestDir: "{app}"
-Source: "convertall.exe.manifest"; DestDir: "{app}"
+Source: "convertall_dos.exe"; DestDir: "{app}"
 Source: "*.dll"; DestDir: "{app}"
 Source: "*.pyd"; DestDir: "{app}"
-Source: "PyQt5\*"; DestDir: "{app}\PyQt5"; Flags: recursesubdirs
+Source: "PyQt5\*"; DestDir: "{app}\PyQt5"; Flags: recursesubdirs createallsubdirs
 Source: "data\*.dat"; DestDir: "{app}\data"
 Source: "doc\*.html"; DestDir: "{app}\doc"
 Source: "doc\LICENSE"; DestDir: "{app}\doc"

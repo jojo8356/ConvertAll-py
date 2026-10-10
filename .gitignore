@@ -3,3 +3,15 @@
 *.swp
 */__pycache__/
 *.hgignore
+
+# Local research environments and generated release/benchmark artifacts
+/.venv/
+/.cache/
+/build/
+/dist/
+
+# Release validation output (published by CI, not committed)
+/.pytest_cache/
+/.coverage
+/.coverage.*
+/htmlcov/

@@ -24,10 +24,7 @@ try:
     from __main__ import __version__, __author__, helpFilePath, iconPath
     from __main__ import lang
 except ImportError:
-    __version__ = __author__ = '??'
-    helpFilePath = None
-    iconPath = None
-    lang = ''
+    from convertall import __version__, __author__, helpFilePath, iconPath, lang
 import unitdata
 from unitgroup import UnitGroup
 from option import Option
@@ -48,7 +45,7 @@ class ConvertDlg(QWidget):
     """Main dialog for ConvertAll program.
     """
     unitData = unitdata.UnitData()
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, showStartupTip=True):
         super().__init__(parent)
         self.setWindowTitle('ConvertAll')
         modPath = os.path.abspath(sys.path[0])
@@ -255,13 +252,17 @@ class ConvertDlg(QWidget):
                     self.setGeometry(finalRect)
         if self.option.boolData('LoadLastUnit') and len(self.recentUnits) > 1:
             self.fromGroup.update(self.recentUnits[0])
-            self.fromUnitEdit.unitUpdate()
+            # unitUpdate intentionally ignores inactive editors. At startup
+            # there is no focus yet, so restore both texts explicitly.
+            self.fromUnitEdit.setText(self.fromGroup.unitString())
             self.toGroup.update(self.recentUnits[1])
-            self.toUnitEdit.unitUpdate()
+            self.toUnitEdit.setText(self.toGroup.unitString())
+            self.fromNumEdit.unitUpdate()
+            self.toNumEdit.unitUpdate()
             self.unitListView.updateFiltering()
             self.fromNumEdit.setFocus()
             self.fromNumEdit.selectAll()
-        if self.option.boolData('ShowStartupTip'):
+        if showStartupTip and self.option.boolData('ShowStartupTip'):
             self.show()
             tipDialog = TipDialog(self.option, self)
             tipDialog.exec_()

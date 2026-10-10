@@ -152,7 +152,7 @@ class ColorSet:
     def setCustomTheme(self):
         """Set to custom theme setting after user color change.
         """
-        if self.themeControl.currentData != ThemeSetting.custom:
+        if self.themeControl.currentData() != ThemeSetting.custom:
             self.themeControl.blockSignals(True)
             self.themeControl.setCurrentIndex(2)
             self.themeControl.blockSignals(False)

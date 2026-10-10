@@ -40,6 +40,6 @@ setup(name = 'convertall',
                                'zip_include_packages': ['*'],
                                'zip_exclude_packages': [],
                                'include_msvcr': True,
-                               'build_exe': '../../convertall-0.7'}},
+                               'build_exe': '../../convertall-0.8.1'}},
       executables = [Executable('convertall.py', base=base,
                                 icon='../win/convertall.ico')])

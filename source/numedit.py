@@ -14,6 +14,7 @@
 
 import re
 import sys
+import math
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtGui import QValidator
 from PyQt5.QtWidgets import (QLineEdit, QMessageBox)
@@ -50,6 +51,9 @@ class NumEdit(QLineEdit):
                     self.thisUnit.reduceGroup()
                     self.otherUnit.reduceGroup()
                 except unitdata.UnitDataError as text:
+                    self.setEnabled(False)
+                    self.convertNum.emit('')
+                    self.status.setText(_('Set units'))
                     QMessageBox.warning(self, 'ConvertAll',
                                               _('Error in unit data - {0}').
                                               format(text))
@@ -92,13 +96,20 @@ class NumEdit(QLineEdit):
             self.recentUnits.addEntry(self.otherUnit.unitString())
         try:
             num = float(eval(self.text()))
+            if not math.isfinite(num):
+                raise ValueError('Number must be finite')
         except:
             self.convertNum.emit('')
             return
         try:
-            numText = self.thisUnit.convertStr(num, self.otherUnit)
+            result = self.thisUnit.convert(num, self.otherUnit)
+            if not math.isfinite(result):
+                self.convertNum.emit('')
+                return
+            numText = self.thisUnit.formatNumStr(result)
             self.convertNum.emit(numText)
-        except unitdata.UnitDataError as text:
+        except (unitdata.UnitDataError, ArithmeticError, ValueError) as text:
+            self.convertNum.emit('')
             QMessageBox.warning(self, 'ConvertAll',
                                       _('Error in unit data - {0}').
                                       format(text))

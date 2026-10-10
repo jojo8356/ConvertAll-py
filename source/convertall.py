@@ -14,7 +14,7 @@
 """
 
 __progname__ = 'ConvertAll'
-__version__ = '0.8.0'
+__version__ = '0.8.1'
 __author__ = 'Doug Bell'
 
 dataFilePath = None    # modified by install script if required
@@ -29,8 +29,7 @@ import locale
 import getopt
 import signal
 import builtins
-from PyQt5.QtCore import (QCoreApplication, QTranslator)
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import (QCoreApplication, QLibraryInfo, QLocale, QTranslator)
 
 def loadTranslator(fileName, app):
     """Load and install qt translator, return True if sucessful.
@@ -47,6 +46,12 @@ def loadTranslator(fileName, app):
     if not result:
         path = os.path.join(modPath, '..', 'i18n', translationPath)
         result = translator.load(fileName, path)
+    if not result and fileName.startswith('qt_'):
+        # Modern Qt5 splits qt_<language> into dependent catalogues. Widgets
+        # need qtbase; load it from the pinned Qt runtime rather than shipping
+        # an unusable forwarding catalogue with absent dependencies.
+        result = translator.load('qtbase_' + fileName[3:],
+                                 QLibraryInfo.location(QLibraryInfo.TranslationsPath))
     if result:
         QCoreApplication.installTranslator(translator)
         return True
@@ -67,14 +72,13 @@ def setupTranslator(app):
     if not lang:
         lang = os.environ.get('LANG', '')
         if not lang:
-            try:
-                lang = locale.getdefaultlocale()[0]
-            except ValueError:
-                pass
-            if not lang:
-                lang = ''
+            # Unlike deprecated locale.getdefaultlocale(), QLocale gives a
+            # catalogue-compatible language name on Windows as well as Unix.
+            lang = QLocale.system().name()
+    # Locale suffixes are not part of catalogue names (C.UTF-8 is English).
+    lang = lang.split('.', 1)[0].split('@', 1)[0].replace('-', '_')
     numTranslators = 0
-    if lang and lang[:2] not in ['C', 'en']:
+    if lang and lang not in ('C', 'POSIX') and lang[:2] != 'en':
         numTranslators += loadTranslator('qt_{0}'.format(lang), app)
         numTranslators += loadTranslator('convertall_{0}'.format(lang), app)
 
@@ -100,45 +104,90 @@ def setupTranslator(app):
 
 
 def main():
+    guiSmokeTest = '--gui-smoke-test' in sys.argv[1:]
     if len(sys.argv) > 1:
         try:
-            opts, args = getopt.gnu_getopt(sys.argv, 'd:fhiqset',
+            opts, args = getopt.gnu_getopt(sys.argv[1:], 'd:fhiqsetv',
                                            ['decimals=', 'fixed-decimals',
                                             'help', 'interactive', 'quiet',
                                             'sci-notation', 'eng-notation',
-                                            'test'])
+                                            'test', 'test-all', 'version', 'gui-smoke-test'])
         except getopt.GetoptError:
-            # check that arguments aren't Qt GUI options
-            if sys.argv[1][:3] not in ['-ba', '-bg', '-bt', '-bu', '-cm',
-                                       '-di', '-do', '-fg', '-fn', '-fo',
-                                       '-ge', '-gr', '-im', '-in', '-na',
-                                       '-nc', '-no', '-re', '-se', '-st',
-                                       '-sy', '-ti', '-vi', '-wi']:
+            # Match complete Qt options, not three-character prefixes:
+            # otherwise -nonsense/-bad would accidentally launch the GUI.
+            qtOptions = {'background', 'bg', 'button', 'btn', 'cmap', 'display',
+                         'dograb', 'foreground', 'fg', 'font', 'fn', 'geometry',
+                         'graphicssystem', 'im', 'inputstyle', 'name', 'ncols',
+                         'nograb', 'reverse', 'session', 'style', 'stylesheet',
+                         'sync', 'title', 'visual', 'widgetcount', 'platform',
+                         'platformpluginpath', 'platformtheme', 'plugin',
+                         'qmljsdebugger', 'qwindowgeometry', 'qwindowicon',
+                         'qwindowtitle', 'testability', 'iconic'}
+            if sys.argv[1].lstrip('-').split('=', 1)[0] not in qtOptions:
                 app = QCoreApplication(sys.argv)
                 setupTranslator(app)
                 import cmdline
                 cmdline.printUsage()
-                sys.exit(2)
+                return 2
         else:
-            app = QCoreApplication(sys.argv)
-            setupTranslator(app)
-            import cmdline
-            try:
-                cmdline.parseArgs(opts, args[1:])
-            except KeyboardInterrupt:
-                pass
-            return
+            if any(opt == '--gui-smoke-test' for opt, value in opts):
+                if args or len(opts) != 1:
+                    print('--gui-smoke-test does not accept conversion arguments', file=sys.stderr)
+                    return 2
+                guiSmokeTest = True
+            else:
+                app = QCoreApplication(sys.argv)
+                setupTranslator(app)
+                import cmdline
+                import unitdata
+                unitdata.lang = lang
+                unitdata.dataFilePath = dataFilePath
+                try:
+                    return cmdline.parseArgs(opts, args)
+                except EOFError:
+                    return 0
+                except KeyboardInterrupt:
+                    return 130
+                except (unitdata.UnitDataError, ArithmeticError, ValueError) as error:
+                    print('Error - {0}'.format(error), file=sys.stderr)
+                    return 1
+    from PyQt5.QtWidgets import QApplication
     userStyle = '-style' in ' '.join(sys.argv)
     app = QApplication(sys.argv)
     setupTranslator(app)  # must be before importing any convertall modules
     import convertdlg
+    unitdata = sys.modules['unitdata']
+    unitdata.lang = lang
+    unitdata.dataFilePath = dataFilePath
     if not userStyle:
         QApplication.setStyle('fusion')
-    win = convertdlg.ConvertDlg()
+    win = convertdlg.ConvertDlg(showStartupTip=not guiSmokeTest)
     win.show()
     signal.signal(signal.SIGINT, signal.SIG_IGN)
-    app.exec_()
+    if guiSmokeTest:
+        from PyQt5.QtCore import QTimer
+        def checkWindow():
+            try:
+                if not win.isVisible() or win.unitListView.topLevelItemCount() < 1:
+                    raise RuntimeError('Unit list was not displayed')
+                win.fromGroup.update('in')
+                win.toGroup.update('cm')
+                win.fromNumEdit.unitUpdate()
+                win.toNumEdit.unitUpdate()
+                if abs(float(win.toNumEdit.text()) - 2.54) > 1e-9:
+                    raise RuntimeError('GUI conversion failed')
+                if win.icons['convertall_med'].isNull() or not win.findHelpFile():
+                    raise RuntimeError('GUI resources missing')
+                print('GUI smoke test passed (Qt5)')
+                result = 0
+            except Exception as error:
+                print('GUI smoke test failed: {0}'.format(error), file=sys.stderr)
+                result = 1
+            win.close()
+            app.exit(result)
+        QTimer.singleShot(0, checkWindow)
+    return app.exec_()
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

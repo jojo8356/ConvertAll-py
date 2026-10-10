@@ -22,6 +22,7 @@ import py_compile
 import glob
 import re
 import subprocess
+import shlex
 
 prefixDir = '/usr/local'
 buildRoot = '/'
@@ -104,9 +105,9 @@ def createWrapper(execDir, execName):
         execDir -- the path where the executable is placed
         execName -- the name for the executable file
     """
-    text = '#!/bin/sh\n\nexec {0} {1}/{2}.py "$@"'.format(sys.executable,
-                                                          execDir,
-                                                          execName)
+    script = os.path.join(execDir, execName + '.py')
+    text = '#!/bin/sh\n\nexec {0} {1} "$@"\n'.format(
+        shlex.quote(sys.executable), shlex.quote(script))
     with open(execName, 'w') as f:
         f.write(text)
     os.chmod(execName, 0o755)
@@ -192,30 +193,30 @@ def main():
         print('Checking dependencies...')
         pyVersion = sys.version_info[:3]
         pyVersion = '.'.join([str(num) for num in pyVersion])
-        if cmpVersions(pyVersion, (3, 4)):
+        if cmpVersions(pyVersion, (3, 10)):
             print('  Python Version {0} -> OK'.format(pyVersion))
         else:
-            print('  Python Version {0} -> Sorry, 3.4 or higher is required'
+            print('  Python Version {0} -> Sorry, 3.10 or higher is required'
                   .format(pyVersion))
             sys.exit(3)
         try:
             from PyQt5 import QtCore, QtWidgets
         except:
-            print('  PyQt not found -> Sorry, PyQt 5.4 or higher is required'
+            print('  PyQt not found -> Sorry, PyQt 5.15.2 or higher is required'
                   ' and must be built for Python 3')
             sys.exit(3)
         qtVersion = QtCore.qVersion()
-        if cmpVersions(qtVersion, (5, 4)):
+        if cmpVersions(qtVersion, (5, 15, 2)):
             print('  Qt Version {0} -> OK'.format(qtVersion))
         else:
-            print('  Qt Version {0} -> Sorry, 5.4 or higher is required'
+            print('  Qt Version {0} -> Sorry, 5.15.2 or higher is required'
                   .format(qtVersion))
             sys.exit(3)
         pyqtVersion = QtCore.PYQT_VERSION_STR
-        if cmpVersions(pyqtVersion, (5, 4)):
+        if cmpVersions(pyqtVersion, (5, 15, 2)):
             print('  PyQt Version {0} -> OK'.format(pyqtVersion))
         else:
-            print('  PyQt Version {0} -> Sorry, 5.4 or higher is required'
+            print('  PyQt Version {0} -> Sorry, 5.15.2 or higher is required'
                   .format(pyqtVersion))
             sys.exit(3)
 
@@ -245,7 +246,7 @@ def main():
         # update help file location in main python script
         replaceLine(os.path.join(pythonBuildDir, '{0}.py'.format(progName)),
                     'helpFilePath = None',
-                    'helpFilePath = \'{0}\'   # modified by install script\n'
+                    'helpFilePath = {0!r}   # modified by install script\n'
                     .format(docPrefixDir))
     if os.path.isdir('data'):
         dataPrefixDir = os.path.join(prefixDir, 'share', progName, 'data')
@@ -260,7 +261,7 @@ def main():
         # update data file location in main python script
         replaceLine(os.path.join(pythonBuildDir, '{0}.py'.format(progName)),
                     'dataFilePath = None',
-                    'dataFilePath =  \'{0}\'   # modified by install script\n'
+                    'dataFilePath = {0!r}   # modified by install script\n'
                     .format(dataPrefixDir))
     if os.path.isdir('icons'):
         iconPrefixDir = iconDir.replace('<prefix>/', '')
@@ -272,7 +273,7 @@ def main():
         # update icon location in main python script
         replaceLine(os.path.join(pythonBuildDir, '{0}.py'.format(progName)),
                     'iconPath = None',
-                    'iconPath =  \'{0}\'   # modified by install script\n'
+                    'iconPath = {0!r}   # modified by install script\n'
                     .format(iconPrefixDir))
         if os.path.isfile(os.path.join('icons', progName + '-icon.svg')):
             svgIconPrefixDir = os.path.join(prefixDir, 'share', 'icons',
