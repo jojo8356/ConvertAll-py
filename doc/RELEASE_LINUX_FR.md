@@ -98,6 +98,15 @@ AppImage et pour le runtime embarqué. Les empreintes viennent des champs
 précède toute exécution d'un outil téléchargé. Le builder reçoit explicitement
 `--runtime-file` : il ne télécharge pas silencieusement un nouveau runtime.
 
+La compression est elle aussi verrouillée à **`zstd`** : l'appimagetool épinglé
+embarque son propre `mksquashfs`, qui n'accepte que ce compresseur. Le premier
+essai utilisateur au SHA `de637a2` a échoué à l'étape 4 avec `--comp xz`.
+Le correctif conserve les mêmes IDs/empreintes et utilise `--comp zstd` ;
+il reste à revalider sur son nouveau SHA. Installer un autre `mksquashfs`
+système ne corrige pas celui embarqué, et aucune installation supplémentaire
+n'est nécessaire pour ce correctif. Un choix de compression incompatible
+est désormais refusé avant de lancer la QA/build locale.
+
 Les upstreams utilisent un tag flottant `continuous`. Si l'asset épinglé est
 supprimé, le script échoue : ne pas désactiver le contrôle ni télécharger
 « latest » au hasard. Mettre à jour les IDs/empreintes délibérément dans un

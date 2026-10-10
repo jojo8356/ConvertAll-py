@@ -219,6 +219,22 @@ def test_tool_locks_are_explicit_and_unverified_assets_are_not_executed(tmp_path
         release_qt6.fetch_tool(pin, tmp_path)
 
 
+def test_appimage_uses_the_locked_builders_supported_compressor():
+    lock = json.loads((ROOT / 'tools/appimage-lock.json').read_text(encoding='utf-8'))
+    assert lock['compression'] == 'zstd'
+    arguments = release_qt6.appimage_command(
+        'AppRun', 'runtime-x86_64', 'ConvertAll.AppDir', 'ConvertAll.AppImage', lock['compression'])
+    assert arguments == ['AppRun', '--runtime-file', 'runtime-x86_64', '--comp', 'zstd',
+                         '--no-appstream', 'ConvertAll.AppDir', 'ConvertAll.AppImage']
+    assert 'xz' not in arguments
+
+
+@pytest.mark.parametrize('compression', ['xz', 'gzip', '', None])
+def test_appimage_rejects_unsupported_compression_before_execution(compression):
+    with pytest.raises(ReleaseError, match='only zstd'):
+        release_qt6.appimage_command('AppRun', 'runtime', 'AppDir', 'out.AppImage', compression)
+
+
 def test_release_elf_architecture_is_checked_before_execution(tmp_path):
     path = tmp_path / 'elf'
     header = bytearray(20)

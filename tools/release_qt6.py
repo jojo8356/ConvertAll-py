@@ -133,6 +133,14 @@ def validate_tool_pin(pin):
         raise ReleaseError('Invalid AppImage tool lock')
 
 
+def appimage_command(tool, runtime, appdir, output, compression):
+    """The pinned builder embeds a zstd-only mksquashfs, not the host tool."""
+    if compression != 'zstd':
+        raise ReleaseError('Pinned appimagetool supports only zstd compression')
+    return [tool, '--runtime-file', runtime, '--comp', compression,
+            '--no-appstream', appdir, output]
+
+
 def fetch_tool(pin, destination):
     """No floating latest download: specific asset ID AND expected SHA-256."""
     validate_tool_pin(pin)
@@ -256,6 +264,8 @@ def build_release(args):
     lock = json.loads((ROOT / 'tools/appimage-lock.json').read_text(encoding='utf-8'))
     if lock.get('architecture') != 'x86_64':
         raise ReleaseError('AppImage tool architecture mismatch')
+    if lock.get('compression') != 'zstd':
+        raise ReleaseError('Pinned appimagetool supports only zstd compression')
     validate_tool_pin(lock['appimagetool'])
     validate_tool_pin(lock['runtime'])
     existing_target = tag_target(tag)
@@ -345,7 +355,7 @@ def build_release(args):
     appdir = packages.stage_appdir(bundle, work / 'ConvertAll.AppDir', ROOT)
     command(['desktop-file-validate', appdir / 'convertall.desktop'])
     image = assets / f'ConvertAll-{version}-x86_64.AppImage'
-    command([tool, '--runtime-file', runtime, '--comp', 'xz', '--no-appstream', appdir, image],
+    command(appimage_command(tool, runtime, appdir, image, lock['compression']),
             env={**environment, 'ARCH': 'x86_64', 'VERSION': version})
     image.chmod(0o755)
     # First exercise the actual AppImage runtime, not just the uncompressed AppDir.

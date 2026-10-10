@@ -1,6 +1,7 @@
 {
   "snapshot_date": "2026-10-10",
   "architecture": "x86_64",
+  "compression": "zstd",
   "appimagetool": {
     "repository": "AppImage/appimagetool",
     "asset_id": 610035789,
