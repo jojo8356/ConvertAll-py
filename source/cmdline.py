@@ -52,6 +52,7 @@ usage = [_('Usage:'),
          '   -q, --quiet           {0}'.format(
                                          _('convert without further prompts')),
          '   -v, --version         show application version and exit',
+         '       --runtime-info    show actual Qt6/binding/SIP versions as JSON',
          '   -t, --test            validate the selected unit catalogue',
          '       --test-all        validate every installed unit catalogue',
          '       --gui-smoke-test  open/check/close the GUI (release validation)',
@@ -66,7 +67,7 @@ def parseArgs(opts, args):
     args = list(args)
     if any(opt in ('-v', '--version') for opt, arg in opts):
         from convertall import __progname__, __version__
-        print('{0} {1} (Qt5)'.format(__progname__, __version__))
+        print('{0} {1} (Qt6)'.format(__progname__, __version__))
         return 0
     diagnostic = any(opt in ('-h', '--help', '-t', '--test', '--test-all')
                      for opt, arg in opts)

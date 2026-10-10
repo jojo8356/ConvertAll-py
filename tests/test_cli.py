@@ -61,7 +61,7 @@ def test_version_does_not_start_gui_or_load_catalogues():
     # Even a deliberately invalid GUI platform must not affect a CLI command.
     result = run_cli('--version', env={'QT_QPA_PLATFORM': 'invalid-platform'})
     assert result.returncode == 0
-    assert result.stdout.strip() == 'ConvertAll 0.8.1 (Qt5)'
+    assert result.stdout.strip() == 'ConvertAll 0.9.0 (Qt6)'
 
 
 @pytest.mark.parametrize('flag', ['-t', '--test'])
@@ -106,7 +106,7 @@ import importlib.abc, sys
 sys.path.insert(0, {str(SCRIPT.parent)!r})
 class RejectGui(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname in ('PyQt5.QtWidgets', 'PyQt5.QtGui'):
+        if fullname in ('PyQt6.QtWidgets', 'PyQt6.QtGui'):
             raise RuntimeError('CLI attempted a GUI import: ' + fullname)
 sys.meta_path.insert(0, RejectGui())
 import convertall
@@ -122,7 +122,7 @@ sys.exit(convertall.main())
 def test_real_main_qapplication_event_loop_and_gui_resources():
     result = run_cli('--gui-smoke-test')
     assert result.returncode == 0, result.stdout + result.stderr
-    assert 'GUI smoke test passed (Qt5)' in result.stdout
+    assert 'GUI smoke test passed (Qt6)' in result.stdout
 
 
 def test_gui_smoke_rejects_conversion_arguments():
@@ -168,3 +168,26 @@ def test_diagnostics_do_not_create_a_user_preferences_file(isolated_environment)
         assert result.returncode == 0
     assert not list(isolated_environment.rglob('.convertall'))
     assert not list(isolated_environment.rglob('convertall.ini'))
+
+
+def test_runtime_info_is_actual_qt6_json_without_a_gui_or_preferences(isolated_environment):
+    import json
+    result = run_cli('--runtime-info', env={'QT_QPA_PLATFORM': 'invalid-platform'})
+    assert result.returncode == 0, result.stderr
+    info = json.loads(result.stdout)
+    assert info['application'] == 'ConvertAll'
+    assert info['version'] == '0.9.0'
+    assert info['binding'] == 'PyQt6'
+    assert info['pyqt_binding'] == '6.11.0'
+    assert info['qt_runtime'] == '6.11.2'
+    assert info['sip'] == '13.13.0'
+    assert info['qt_translations_path']
+    assert not list(isolated_environment.rglob('.convertall'))
+    assert not list(isolated_environment.rglob('convertall.ini'))
+
+
+@pytest.mark.parametrize('extra', [['in'], ['--version'], ['--gui-smoke-test']])
+def test_runtime_info_rejects_other_arguments(extra):
+    result = run_cli('--runtime-info', *extra, env={'QT_QPA_PLATFORM': 'invalid-platform'})
+    assert result.returncode == 2
+    assert 'does not accept other arguments' in result.stderr

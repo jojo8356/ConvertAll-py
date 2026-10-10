@@ -1,59 +1,81 @@
-# ConvertAll-py — Qt5 0.8.1
+# ConvertAll-py — Qt6 0.9.0
 
-ConvertAll combines units freely: inches per decade, meter-pounds or cubic
-nautical miles. This repository maintains the **Python / PyQt5** application,
-not the newer Flutter application published upstream.
+ConvertAll permet de combiner librement les unités : pouces par décennie,
+mètres-livres, milles nautiques au cube… Ce dépôt maintient l'application
+**Python / PyQt6**, distincte de l'application Flutter actuelle de l'amont.
 
-## Run from source
+**État : portage 0.9.0 à valider.** Aucun résultat Qt6 de production n'est
+revendiqué. Qt5 0.8.1 reste une référence séparée et immuable au commit
+`b10b8e7837e30a2ec9a957a9a2519e4ac0334db3`.
 
-Use Python **3.10–3.14** and a dedicated Qt5 virtual environment:
+## Lancer les sources
 
-```sh
-python3.11 -m venv .venv/release
-. .venv/release/bin/activate
-python -m pip install -r requirements-qt5.txt
+Profil : **Python 3.11–3.14, PyQt6 6.11.0 / Qt 6.11.2 / SIP 13.13.0**.
+Utiliser un environnement dédié ; ne pas installer PyQt5/PySide avec PyQt6.
+
+```bash
+python3.11 -m venv .venv/qt6
+. .venv/qt6/bin/activate
+python -m pip install -r requirements-qt6.txt
 python source/convertall.py
 python source/convertall.py -q 1 in cm
 ```
 
-On Windows, activate with `.venv\release\Scripts\Activate.ps1`. Linux needs
-its normal Qt system libraries even for offscreen widget tests. The pinned
-profile uses PyQt5 5.15.11; Qt is 5.15.19 on Linux/macOS and 5.15.2 on Windows.
-Do not mix PyQt5 and PyQt6 in this environment.
+Windows PowerShell : `py -3.11 -m venv .venv/qt6`, puis
+`.venv\qt6\Scripts\Activate.ps1`. La cible binaire Windows est x64,
+Windows 10 1809 ou ultérieur / Windows 11. Linux nécessite les bibliothèques
+système Qt habituelles, même pour les tests offscreen. La CI cible Ubuntu 24.04
+et Windows Server 2022 ; macOS, Inno Setup, DPI/GPU et bureau réel restent
+à vérifier manuellement.
 
-## Validate a release
+## Un seul lancement pour les tests et le bundle
 
-```sh
-python -m pip install -r requirements-test.txt
-python tools/validate_release.py
+À exécuter vous-même depuis la racine du dépôt (Git Bash sous Windows) :
+
+```bash
+bash test_all_qt6.sh
 ```
 
-The gate runs all seven unit catalogues, numerical references and round trips,
-CLI subprocesses, real Qt5 widgets/signals/keyboard/dialogs, translations,
-preferences, the isolated Unix installer and reproducible source archives.
-It requires **80% line/branch combined coverage** and saves JUnit, coverage
-and input hashes under `build/test-results/` (not committed).
+Le lanceur prépare `.venv/test-all-qt6`, installe les profils épinglés,
+exécute la suite complète et la couverture, puis construit/teste le vrai bundle
+PyInstaller uniquement si la suite source passe. Il produit :
 
-Additional application diagnostics:
+- `build/qt6-diagnostics/<run>/SUMMARY.txt` : résumé à transmettre ;
+- `build/qt6-diagnostics/qt6-results-<run>.tar.gz` : rapports et logs uniquement ;
+- `build/qt6-native/<run>/dist/convertall/` : bundle conservé séparément.
 
-```sh
+Premier passage plus rapide : `bash test_all_qt6.sh --no-build`.
+Réutilisation sans installation :
+`bash test_all_qt6.sh --no-install --python .venv/test-all-qt6/bin/python`.
+Sous Windows, remplacer le chemin par `.venv/test-all-qt6/Scripts/python.exe`.
+Aucun sudo, commit, push, tag ni release n'est effectué par ce lanceur.
+
+La suite conserve les assertions sur les **7 catalogues / 4104 définitions**,
+les références numériques, aller-retours, fractions/bases, CLI en sous-processus,
+vrais widgets/signaux/clavier/dialogues Qt6, traductions, préférences compatibles
+Qt5, installateur Unix isolé et archives source reproductibles. Le seuil reste
+**80 % de couverture combinée instructions/branches**, sous-processus inclus.
+La CI teste les quatre versions Python 3.11 à 3.14 sur Linux et Windows et
+construit les deux bundles seulement après réussite de tous les tests.
+
+## Diagnostics et publication
+
+```bash
 python source/convertall.py --version
+python source/convertall.py --runtime-info
 python source/convertall.py --test-all
-python source/convertall.py --gui-smoke-test
+QT_QPA_PLATFORM=offscreen python source/convertall.py --gui-smoke-test
 ```
 
-The last command opens/checks/closes the application; it is not a normal GUI
-session. Use `QT_QPA_PLATFORM=offscreen` on a headless Linux machine.
+- [Portage et compatibilité Qt6](doc/PORTAGE_QT6_FR.md)
+- [Validation et commandes de release Qt6](doc/RELEASE_QT6_FR.md)
+- [Notes 0.9.0, validation en attente](doc/RELEASE_NOTES_0.9.0.md)
+- [Licences et redistribution](doc/LICENCES_QT6_FR.md)
+- [Audit/benchmark **historique 0.8.0**](doc/MIGRATION_QT6_FR.md)
+- [Procédure **historique Qt5 0.8.1**](doc/RELEASE_QT5_FR.md)
 
-**Publication procedure, actual local results and manual acceptance checklist:**
-[doc/RELEASE_QT5_FR.md](doc/RELEASE_QT5_FR.md) (French).
-The CI workflow also builds and smoke-tests native Linux/Windows PyInstaller
-bundles; it does **not** publish a release or certify an Inno Setup installer.
-
-## Background
-
-The [Qt6 audit and benchmark](doc/MIGRATION_QT6_FR.md) describe the historical
-0.8.0 reference commit, not 0.8.1. Qt5 is retained here for this maintenance
-release; passing application tests does not restore Qt5's upstream security
-support. The original project licence is in [doc/LICENSE](doc/LICENSE);
-binary distribution must also respect PyQt5/Qt/PyInstaller licences.
+Le workflow Qt5 est manuel et extrait son SHA historique : il ne teste jamais
+ces sources Qt6 avec PyQt5. `test_all_qt5.sh` refuse ce nouvel arbre ; utiliser
+l'archive du commit Qt5 pour reproduire ses tests. Ne pas retargeter `v0.8.1`.
+La CI ne publie rien automatiquement. Offscreen n'est pas une certification
+d'un bureau réel et le benchmark 0.8.0 n'est pas une mesure de cette 0.9.0.

@@ -38,9 +38,9 @@ class PrototypeTests(unittest.TestCase):
                                          (output / original.relative_to(ROOT)).read_bytes())
             self.assertEqual((ROOT / 'install.py').read_bytes(), (output / 'install.py').read_bytes())
             for path in (output / 'source').glob('*.py'):
-                ast.parse(path.read_text(), filename=str(path))
-            self.assertIn('PyQt6', (output / 'source' / 'convertall.py').read_text())
-            self.assertNotIn('qApp', (output / 'source' / 'colorset.py').read_text())
+                ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+            self.assertIn('PyQt6', (output / 'source' / 'convertall.py').read_text(encoding='utf-8'))
+            self.assertNotIn('qApp', (output / 'source' / 'colorset.py').read_text(encoding='utf-8'))
 
     def test_existing_directory_is_not_overwritten(self):
         with tempfile.TemporaryDirectory() as directory:

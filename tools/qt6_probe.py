@@ -79,6 +79,8 @@ ENGINE = ('unitatom.py', 'unitdata.py', 'unitgroup.py', 'cmdline.py',
 
 
 def transform(text, name):
+    if "from PyQt6." in text and "from PyQt5." not in text:
+        return text, {}  # current production Qt6 tree: no prototype rewrite
     changes = {}
     count = text.count('from PyQt5.')
     if count:

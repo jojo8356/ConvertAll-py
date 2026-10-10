@@ -54,6 +54,12 @@ done
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 2
 cd "$ROOT" || exit 2
+if [[ -f "$ROOT/requirements-qt6.txt" ]]; then
+    echo 'Ce checkout est Qt6. Utiliser : bash test_all_qt6.sh' >&2
+    echo 'La baseline Qt5 validée est b10b8e7837e30a2ec9a957a9a2519e4ac0334db3.' >&2
+    echo 'Exécuter le lanceur Qt5 depuis une archive de ce commit, dans un dossier séparé.' >&2
+    exit 2
+fi
 # Résoudre avant de changer d'environnement, y compris un chemin relatif.
 BASE_PYTHON=''
 if [[ -n "$REQUESTED_PYTHON" ]]; then

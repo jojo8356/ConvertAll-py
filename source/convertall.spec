@@ -1,13 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller 6.22.3, Qt5 only. Run from any cwd using an absolute spec path.
-# Flat onedir layout is retained for the Unix resource loader and Inno Setup.
+# PyInstaller 6.22.3, Qt6 only. Run from any cwd using an absolute spec path.
+# Flat onedir layout is retained for resource loading and Inno Setup.
 from pathlib import Path
 import sys
 
 source = Path(SPECPATH).resolve()
 root = source.parent
-resources = [(str(root / name), name)
-             for name in ('data', 'doc', 'icons', 'translations')]
+resources = [(str(root / name), name) for name in ('data', 'doc', 'icons')]
+# Existing application QM files are readable by Qt6. Widget translations come
+# from PyQt6's qtbase catalogue via the PyInstaller Qt hook, never Qt5 qt_*.qm.
+resources += [(str(path), 'translations')
+              for pattern in ('convertall_*.qm', 'convertall_*.ts')
+              for path in (root / 'translations').glob(pattern)]
 resources += [(str(path), 'source') for pattern in ('*.py', '*.pro', '*.spec')
               for path in source.glob(pattern)]
 resources += [(str(path), '.') for path in (root / 'win').iterdir()
@@ -18,10 +22,10 @@ analysis = Analysis(
     pathex=[str(source)],
     binaries=[],
     datas=resources,
-    hiddenimports=['PyQt5.QtWidgets'],  # CLI keeps GUI imports lazy
+    hiddenimports=['PyQt6.QtWidgets', 'PyQt6.sip'],
     hookspath=[],
     runtime_hooks=[],
-    excludes=['PyQt6', 'PySide6', 'PySide2'],
+    excludes=['PyQt5', 'PySide6', 'PySide2'],
     noarchive=False,
 )
 pyz = PYZ(analysis.pure)
@@ -34,7 +38,6 @@ gui = EXE(pyz, analysis.scripts, [], name='convertall',
           console=not windows, **common)
 executables = [gui]
 if windows:
-    # Keep a console entry point for CLI validation; convertall.exe is GUI-only.
     cli = EXE(pyz, analysis.scripts, [], name='convertall_dos', console=True,
               **common)
     executables.append(cli)

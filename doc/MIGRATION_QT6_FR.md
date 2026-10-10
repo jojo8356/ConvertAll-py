@@ -1,5 +1,8 @@
 # ConvertAll-py : release de référence Qt5, étude Qt6 et benchmark
 
+> **La migration de production actuelle est décrite dans [PORTAGE_QT6_FR.md](PORTAGE_QT6_FR.md).**
+> Ce document et ses résultats restent un audit historique, pas la validation de Qt6 0.9.0.
+>
 > **Historique 0.8.0 :** cet audit et ses mesures portent sur le commit indiqué
 > ci-dessous, pas sur la maintenance 0.8.1. Pour les tests et la publication
 > de Qt5 0.8.1, voir [RELEASE_QT5_FR.md](RELEASE_QT5_FR.md).

@@ -19,7 +19,7 @@ pytestmark = pytest.mark.packaging
 
 def test_versions_are_consistent_without_rewriting_history():
     version = convertall.__version__
-    assert version == '0.8.1'
+    assert version == '0.9.0'
     assert release_source.version_from_source((ROOT / 'source/convertall.py').read_text(encoding='utf-8')) == version
     for path in (ROOT / 'win').glob('*.iss'):
         text = path.read_text(encoding='utf-8')
@@ -34,7 +34,8 @@ def test_versions_are_consistent_without_rewriting_history():
             assert re.search(r'0\.\d+\.\d+', path.read_text(encoding='utf-8')).group() == version, path
     setup = (ROOT / 'source/setup.py').read_text(encoding='utf-8')
     assert 'from convertall import __version__' in setup
-    assert '../../convertall-' + version in setup
+    assert "'-m', 'PyInstaller'" in setup
+    assert 'from cx_Freeze import' not in setup
     assert '0.8.0' in (ROOT / 'doc/README.html').read_text(encoding='utf-8')
 
 
@@ -47,16 +48,15 @@ def test_all_python_source_files_compile():
         compile(path.read_bytes(), str(path), 'exec')
 
 
-def test_runtime_is_pinned_to_qt5_only():
-    text = (ROOT / 'requirements-qt5.txt').read_text(encoding='utf-8')
-    for expected in ('PyQt5==5.15.11', 'PyQt5-sip==12.20.0',
-                     'PyQt5-Qt5==5.15.19', 'PyQt5-Qt5==5.15.2'):
+def test_runtime_is_pinned_to_qt6_only():
+    text = (ROOT / 'requirements-qt6.txt').read_text(encoding='utf-8')
+    for expected in ('PyQt6==6.11.0', 'PyQt6-sip==13.13.0', 'PyQt6-Qt6==6.11.2'):
         assert expected in text
-    assert 'PyQt6' not in text and 'PySide' not in text
+    assert 'PyQt5' not in text and 'PySide' not in text
     for path in (ROOT / 'source').glob('*.py'):
         tree = ast.parse(path.read_text(encoding='utf-8'))
         imports = [n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)]
-        assert not any(name and name.startswith(('PyQt6', 'PySide')) for name in imports)
+        assert not any(name and name.startswith(('PyQt5', 'PySide')) for name in imports)
 
 
 def test_pyinstaller_recipe_has_no_machine_specific_path_or_removed_crypto_api():
@@ -86,6 +86,7 @@ def test_archive_reproducible_checksum_commit_and_extracted_cli(committed_copy, 
     content = first[0].read_bytes()
     metadata = json.loads(first[2].read_text(encoding='utf-8'))
     assert metadata['source_commit'] == git('rev-parse', 'HEAD').decode().strip()
+    assert metadata['binding'] == 'Qt6'
     assert metadata['sha256'] == hashlib.sha256(content).hexdigest()
     assert first[1].read_text(encoding='utf-8').strip() == f"{metadata['sha256']}  {first[0].name}"
     second = release_source.create_archive(project, project / 'dist/release')
@@ -95,12 +96,14 @@ def test_archive_reproducible_checksum_commit_and_extracted_cli(committed_copy, 
     extracted = tmp_path / 'extracted'
     with tarfile.open(first[0], 'r:gz') as archive:
         paths = [member.name for member in archive.getmembers()]
-        prefix = 'ConvertAll-0.8.1-qt5-source/'
+        prefix = 'ConvertAll-0.9.0-qt6-source/'
         for relative in ('source/convertall.py', 'data/units.dat', 'translations/convertall_fr.qm',
                          'install.py', 'doc/LICENSE', 'icons/convertall_med.png',
                          'requirements-test.txt', 'pytest.ini', '.coveragerc',
-                         '.github/workflows/qt5-release.yml', 'tests/test_gui.py',
-                         'tools/release_source.py'):
+                         '.github/workflows/qt6-release.yml', 'tests/test_gui.py',
+                         'tools/release_source.py', 'tools/update_translations.py',
+                         'requirements-qt6.txt', 'test_all_qt6.sh',
+                         'doc/LICENSE-GPL-3.0', 'doc/RELEASE_QT6_FR.md'):
             assert prefix + relative in paths
         assert not any('/.git/' in path or '/.venv/' in path or '__pycache__' in path for path in paths)
         # This archive is created by git from our own temporary commit. All
@@ -109,7 +112,7 @@ def test_archive_reproducible_checksum_commit_and_extracted_cli(committed_copy, 
                    and '..' not in Path(path).parts for path in paths)
         filters = {'filter': 'data'} if hasattr(tarfile, 'data_filter') else {}
         archive.extractall(extracted, **filters)
-    script = extracted / 'ConvertAll-0.8.1-qt5-source/source/convertall.py'
+    script = extracted / 'ConvertAll-0.9.0-qt6-source/source/convertall.py'
     result = run_cli('-q', '1', 'in', 'cm', script=script, cwd=tmp_path)
     assert result.returncode == 0 and result.stdout.strip() == '1 in = 2.54 cm'
     assert run_cli('--test-all', script=script, cwd=tmp_path).returncode == 0

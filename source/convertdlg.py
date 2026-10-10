@@ -14,9 +14,9 @@
 
 import sys
 import os.path
-from PyQt5.QtCore import (QPoint, QRect, Qt)
-from PyQt5.QtGui import (QColor, QFont, QPalette)
-from PyQt5.QtWidgets import (QApplication, QCheckBox, QColorDialog, QDialog,
+from PyQt6.QtCore import (QByteArray, QPoint, QRect, Qt)
+from PyQt6.QtGui import (QColor, QFont, QPalette)
+from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QDialog,
                              QFrame, QGridLayout, QGroupBox, QHBoxLayout,
                              QLabel, QLayout, QMenu, QMessageBox, QPushButton,
                              QSizePolicy, QVBoxLayout, QWidget)
@@ -68,13 +68,9 @@ class ConvertDlg(QWidget):
         if self.option.strData('ColorTheme') != 'system':
             self.colorSet.setAppColors()
         self.sysFont = self.font()
-        self.guiFont = None
-        fontStr = self.option.strData('GuiFont', True)
-        if fontStr:
-            guiFont = self.font()
-            if guiFont.fromString(fontStr):
-                QApplication.setFont(guiFont)
-                self.guiFont = guiFont
+        self.guiFont = fontset.fontFromOptions(self.option)
+        if self.guiFont is not None:
+            QApplication.setFont(self.guiFont)
         self.recentUnits = recentunits.RecentUnits(self.option)
         try:
             num = ConvertDlg.unitData.readData()
@@ -128,7 +124,7 @@ class ConvertDlg(QWidget):
         self.unitListView.unitChanged.connect(self.fromUnitEdit.unitUpdate)
         self.unitListView.unitChanged.connect(self.toUnitEdit.unitUpdate)
         self.unitListView.haveCurrentUnit.connect(self.enableButtons)
-        self.unitListView.setFocusPolicy(Qt.NoFocus)
+        self.unitListView.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         textButtonLayout = QHBoxLayout()
         textButtonLayout.setSpacing(6)
@@ -139,8 +135,8 @@ class ConvertDlg(QWidget):
         self.textButtons.append(QPushButton('{0} (*)'.format(_('Multiply'))))
         self.textButtons.append(QPushButton('{0} (/)'.format(_('Divide'))))
         for button in self.textButtons:
-            button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-            button.setFocusPolicy(Qt.NoFocus)
+            button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             textButtonLayout.addWidget(button)
             button.clicked.connect(self.unitListView.addUnitText)
         textButtonLayout.addStretch(1)
@@ -158,8 +154,8 @@ class ConvertDlg(QWidget):
         self.unitButtons = [self.clearButton, self.recentButton,
                             self.filterButton]
         for button in self.unitButtons:
-            button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-            button.setFocusPolicy(Qt.NoFocus)
+            button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             unitButtonLayout.addWidget(button)
         unitButtonLayout.addStretch(1)
         self.showHideButtons()
@@ -168,7 +164,7 @@ class ConvertDlg(QWidget):
         numberLayout.setVerticalSpacing(3)
         mainLayout.addLayout(numberLayout)
         statusLabel = QLabel(_('Set units'))
-        statusLabel.setFrameStyle(QFrame.Panel | QFrame.Sunken)
+        statusLabel.setFrameStyle(QFrame.Shape.Panel | QFrame.Shadow.Sunken)
         mainLayout.addWidget(statusLabel)
 
         fromNumLabel = QLabel(_('No Unit Set'))
@@ -206,50 +202,31 @@ class ConvertDlg(QWidget):
         topLayout.addLayout(buttonLayout)
         closeButton = QPushButton(_('&Close'))
         buttonLayout.addWidget(closeButton)
-        closeButton.setFocusPolicy(Qt.NoFocus)
+        closeButton.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         closeButton.clicked.connect(self.close)
         optionsButton = QPushButton(_('&Options...'))
         buttonLayout.addWidget(optionsButton)
-        optionsButton.setFocusPolicy(Qt.NoFocus)
+        optionsButton.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         optionsButton.clicked.connect(self.changeOptions)
         basesButton = QPushButton(_('&Bases...'))
         buttonLayout.addWidget(basesButton)
-        basesButton.setFocusPolicy(Qt.NoFocus)
+        basesButton.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         basesButton.clicked.connect(self.showBases)
         fractionsButton = QPushButton(_('&Fractions...'))
         buttonLayout.addWidget(fractionsButton)
-        fractionsButton.setFocusPolicy(Qt.NoFocus)
+        fractionsButton.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         fractionsButton.clicked.connect(self.showFractions)
         helpButton = QPushButton(_('&Help...'))
         buttonLayout.addWidget(helpButton)
-        helpButton.setFocusPolicy(Qt.NoFocus)
+        helpButton.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         helpButton.clicked.connect(self.help)
         aboutButton = QPushButton(_('&About...'))
         buttonLayout.addWidget(aboutButton)
-        aboutButton.setFocusPolicy(Qt.NoFocus)
+        aboutButton.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         aboutButton.clicked.connect(self.about)
         buttonLayout.addStretch()
 
-        if self.option.boolData('RemenberDlgPos'):
-            rect = QRect(self.option.intData('MainDlgXPos', 0, 10000),
-                         self.option.intData('MainDlgYPos', 0, 10000),
-                         self.option.intData('MainDlgXSize', 0, 10000),
-                         self.option.intData('MainDlgYSize', 0, 10000))
-            if rect.isValid():
-                availRect = (QApplication.primaryScreen().
-                             availableVirtualGeometry())
-                topMargin = self.option.intData('MainDlgTopMargin', 0, 1000)
-                otherMargin = self.option.intData('MainDlgOtherMargin', 0,
-                                                  1000)
-                # remove frame space from available rect
-                availRect.adjust(otherMargin, topMargin,
-                                 -otherMargin, -otherMargin)
-                finalRect = rect.intersected(availRect)
-                if finalRect.isEmpty():
-                    rect.moveTo(0, 0)
-                    finalRect = rect.intersected(availRect)
-                if finalRect.isValid():
-                    self.setGeometry(finalRect)
+        self.restoreWindowGeometry()
         if self.option.boolData('LoadLastUnit') and len(self.recentUnits) > 1:
             self.fromGroup.update(self.recentUnits[0])
             # unitUpdate intentionally ignores inactive editors. At startup
@@ -265,7 +242,41 @@ class ConvertDlg(QWidget):
         if showStartupTip and self.option.boolData('ShowStartupTip'):
             self.show()
             tipDialog = TipDialog(self.option, self)
-            tipDialog.exec_()
+            tipDialog.exec()
+
+    def restoreWindowGeometry(self):
+        """Restore Qt6's DPI/screen-aware state, with the Qt5 keys as fallback.
+
+        Keep legacy keys readable and writable so users may return to their
+        archived Qt5 installation without losing preferences or unit history.
+        """
+        if not self.option.boolData('RemenberDlgPos'):
+            return
+        geometry = self.option.strData('MainDlgGeometry', True)
+        if geometry:
+            try:
+                state = QByteArray.fromHex(geometry.encode('ascii'))
+                if not state.isEmpty() and self.restoreGeometry(state):
+                    return
+            except (ValueError, UnicodeError):
+                pass
+        rect = QRect(self.option.intData('MainDlgXPos', -100000, 100000),
+                     self.option.intData('MainDlgYPos', -100000, 100000),
+                     self.option.intData('MainDlgXSize', 0, 100000),
+                     self.option.intData('MainDlgYSize', 0, 100000))
+        if not rect.isValid():
+            return
+        screens = QApplication.screens()
+        if not screens:
+            return
+        screen = next((s for s in screens if s.availableGeometry().intersects(rect)),
+                      QApplication.primaryScreen() or screens[0])
+        available = screen.availableGeometry()
+        width = min(rect.width(), available.width())
+        height = min(rect.height(), available.height())
+        x = max(available.left(), min(rect.x(), available.right() - width + 1))
+        y = max(available.top(), min(rect.y(), available.bottom() - height + 1))
+        self.setGeometry(QRect(x, y, width, height))
 
     def recentMenu(self):
         """Show a menu with recently used units.
@@ -275,7 +286,7 @@ class ConvertDlg(QWidget):
         for unit in self.recentUnits:
             action = menu.addAction(unit)
         menu.triggered.connect(self.insertRecent)
-        menu.exec_(button.mapToGlobal(QPoint(0, 0)))
+        menu.exec(button.mapToGlobal(QPoint(0, 0)))
 
     def insertRecent(self, action):
         """Insert the recent unit from the given action.
@@ -299,7 +310,7 @@ class ConvertDlg(QWidget):
             for unitType in ConvertDlg.unitData.typeList:
                 action = menu.addAction(unitType)
             menu.triggered.connect(self.startTypeFilter)
-            menu.exec_(button.mapToGlobal(QPoint(0, 0)))
+            menu.exec(button.mapToGlobal(QPoint(0, 0)))
 
     def startTypeFilter(self, action):
         """Start type filter based on the given action.
@@ -361,7 +372,7 @@ class ConvertDlg(QWidget):
         dlg.startGroupBox(_('Appearance'))
         optiondlg.OptionDlgPush(dlg, _('Set GUI Colors'), self.showColorDlg)
         optiondlg.OptionDlgPush(dlg, _('Set GUI Fonts'), self.showFontDlg)
-        if dlg.exec_() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             self.option.writeChanges()
             self.recentUnits.updateQuantity()
             self.showHideButtons()
@@ -377,13 +388,12 @@ class ConvertDlg(QWidget):
         """Show the custom font dialog.
         """
         dialog = fontset.CustomFontDialog(self.sysFont, self.guiFont, self)
-        if dialog.exec_() == QDialog.Accepted:
+        if dialog.exec() == QDialog.DialogCode.Accepted:
             newFont = dialog.resultingFont()
-            if newFont:
-                self.option.changeData('GuiFont', newFont.toString(), True)
+            fontset.storeFontOptions(self.option, newFont)
+            if newFont is not None:
                 self.guiFont = newFont
             else:   # use system font
-                self.option.changeData('GuiFont', '', True)
                 self.guiFont = None
                 newFont = self.sysFont
             QApplication.setFont(newFont)
@@ -446,6 +456,8 @@ class ConvertDlg(QWidget):
         """Save window data on close.
         """
         if self.option.boolData('RemenberDlgPos'):
+            state = bytes(self.saveGeometry().toHex()).decode('ascii')
+            self.option.changeData('MainDlgGeometry', state, True)
             contentsRect = self.geometry()
             frameRect = self.frameGeometry()
             self.option.changeData('MainDlgXSize', contentsRect.width(), True)
@@ -467,8 +479,8 @@ class TipDialog(QDialog):
     def __init__(self, option, parent=None):
         super().__init__(parent)
         self.option = option
-        self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint |
-                            Qt.WindowSystemMenuHint)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowTitleHint |
+                            Qt.WindowType.WindowSystemMenuHint)
         self.setWindowTitle(_('Convertall - Tip'))
         topLayout = QVBoxLayout(self)
         self.setLayout(topLayout)
@@ -477,7 +489,7 @@ class TipDialog(QDialog):
         topLayout.addWidget(box)
         boxLayout = QVBoxLayout(box)
         label = QLabel(self)
-        label.setTextFormat(Qt.RichText)
+        label.setTextFormat(Qt.TextFormat.RichText)
         label.setText(_('<p>ConvertAll\'s strength is the ability to combine '
                         'units:</p>'
                         '<ul><li>Enter "m/s" to get meters per second</li>'

@@ -14,9 +14,9 @@
 
 import math
 from fractions import Fraction
-from PyQt5.QtCore import Qt, QRegularExpression
-from PyQt5.QtGui import QRegularExpressionValidator
-from PyQt5.QtWidgets import (QApplication, QCheckBox, QDialog, QHBoxLayout,
+from PyQt6.QtCore import Qt, QRegularExpression
+from PyQt6.QtGui import QRegularExpressionValidator
+from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QHBoxLayout,
                              QLabel, QLineEdit, QMessageBox, QPushButton,
                              QSpinBox, QTreeWidget, QTreeWidgetItem,
                              QVBoxLayout)
@@ -28,9 +28,9 @@ class BasesDialog(QDialog):
     """
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setAttribute(Qt.WA_QuitOnClose, False)
-        self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint |
-                            Qt.WindowSystemMenuHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowTitleHint |
+                            Qt.WindowType.WindowSystemMenuHint)
         self.setWindowTitle(_('Base Conversions'))
         self.value = 0
         self.numBits = 32
@@ -108,8 +108,8 @@ class BasesDialog(QDialog):
         """Show the dialog to update bit settings.
         """
         dlg = QDialog(self)
-        dlg.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint |
-                           Qt.WindowSystemMenuHint)
+        dlg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowTitleHint |
+                           Qt.WindowType.WindowSystemMenuHint)
         dlg.setWindowTitle(_('Bit Settings'))
         topLayout = QVBoxLayout(dlg)
         dlg.setLayout(topLayout)
@@ -138,7 +138,7 @@ class BasesDialog(QDialog):
         cancelButton = QPushButton(_('&Cancel'), dlg)
         ctrlLayout.addWidget(cancelButton)
         cancelButton.clicked.connect(dlg.reject)
-        if dlg.exec_() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             self.numBits = bitSizeBox.value()
             self.twosComplement = twoCompBox.isChecked()
             self.setButtonLabel()
@@ -159,9 +159,9 @@ class FractionDialog(QDialog):
     """
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setAttribute(Qt.WA_QuitOnClose, False)
-        self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint |
-                            Qt.WindowSystemMenuHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowTitleHint |
+                            Qt.WindowType.WindowSystemMenuHint)
         self.setWindowTitle(_('Fraction Conversions'))
         layout = QVBoxLayout(self)
         layout.setSpacing(0)
@@ -212,7 +212,7 @@ class FractionDialog(QDialog):
         if not math.isfinite(num):
             QMessageBox.warning(self, 'ConvertAll', _('Invalid expresssion'))
             return
-        QApplication.setOverrideCursor(Qt.WaitCursor)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         powerOfTwo = self.powerTwoCtrl.isChecked()
         for numer, denom in listFractions(num, powerOfTwo):
             output = ['{0}/{1}'.format(numer, denom),

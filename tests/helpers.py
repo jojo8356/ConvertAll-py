@@ -29,6 +29,7 @@ def copy_project(destination):
                         ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
     for name in ('.gitignore', '.gitattributes', '.coveragerc', 'pytest.ini', 'README.md', 'install.py',
                  'uninstall.py', 'convertall.desktop', 'requirements-qt5.txt',
-                 'requirements-test.txt', 'requirements-build.txt'):
+                 'requirements-qt6.txt', 'requirements-test.txt', 'requirements-build.txt',
+                 'test_all_qt5.sh', 'test_all_qt6.sh'):
         shutil.copy2(ROOT / name, destination / name)
     return destination

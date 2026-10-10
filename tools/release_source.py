@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create an immutable source archive from a CLEAN committed Qt5 tree.
+"""Create an immutable source archive from a CLEAN committed Qt6 tree.
 
 No commit, tag, push or GitHub release is performed. Uses only the stdlib/git.
 The gzip timestamp is zero, so repeated archives of the same commit match.
@@ -43,7 +43,7 @@ def create_archive(root, output_dir, commit='HEAD'):
         raise ValueError('Archive must target the checked-out, tested HEAD commit')
     source = git(root, 'show', sha + ':source/convertall.py').decode('utf-8')
     version = version_from_source(source)
-    name = f'ConvertAll-{version}-qt5-source'
+    name = f'ConvertAll-{version}-qt6-source'
     # Check where output is going BEFORE creating any files.
     if output_dir == root or root.is_relative_to(output_dir):
         raise ValueError('Use a dedicated output directory, e.g. dist/release')
@@ -59,7 +59,7 @@ def create_archive(root, output_dir, commit='HEAD'):
     digest = hashlib.sha256(compressed).hexdigest()
     checksum = archive.with_name(archive.name + '.sha256')
     checksum.write_text(f'{digest}  {archive.name}\n', encoding='ascii')
-    metadata = {'version': version, 'binding': 'Qt5', 'source_commit': sha,
+    metadata = {'version': version, 'binding': 'Qt6', 'source_commit': sha,
                 'archive': archive.name, 'sha256': digest}
     provenance = archive.with_name(archive.name + '.provenance.json')
     provenance.write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')

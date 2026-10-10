@@ -76,8 +76,8 @@ def cmpVersions(versionStr, reqdTuple):
         return True
     return False
 
-def copyDir(srcDir, dstDir):
-    """Copy all regular files from srcDir to dstDir.
+def copyDir(srcDir, dstDir, prefix=None):
+    """Copy regular files, optionally restricted to an application prefix.
 
     dstDir is created if necessary.
     Arguments:
@@ -89,6 +89,8 @@ def copyDir(srcDir, dstDir):
             os.makedirs(dstDir)
         names = os.listdir(srcDir)
         for name in names:
+            if prefix is not None and not name.startswith(prefix):
+                continue
             srcPath = os.path.join(srcDir, name)
             if os.path.isfile(srcPath):
                 shutil.copy2(srcPath, os.path.join(dstDir, name))
@@ -123,9 +125,9 @@ def replaceLine(path, origLineStart, newLine):
         origLineStart -- the beginning of the line to be replaced
         newLine -- the replacement line
     """
-    with open(path, 'r') as f:
+    with open(path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
-    with open(path, 'w') as f:
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
         for line in lines:
             if line.startswith(origLineStart):
                 f.write(newLine)
@@ -196,30 +198,30 @@ def main():
         print('Checking dependencies...')
         pyVersion = sys.version_info[:3]
         pyVersion = '.'.join([str(num) for num in pyVersion])
-        if cmpVersions(pyVersion, (3, 10)):
+        if cmpVersions(pyVersion, (3, 11)):
             print('  Python Version {0} -> OK'.format(pyVersion))
         else:
-            print('  Python Version {0} -> Sorry, 3.10 or higher is required'
+            print('  Python Version {0} -> Sorry, 3.11 or higher is required'
                   .format(pyVersion))
             sys.exit(3)
         try:
-            from PyQt5 import QtCore, QtWidgets
+            from PyQt6 import QtCore, QtWidgets
         except:
-            print('  PyQt not found -> Sorry, PyQt 5.15.2 or higher is required'
+            print('  PyQt not found -> Sorry, PyQt 6.11.0 or higher is required'
                   ' and must be built for Python 3')
             sys.exit(3)
         qtVersion = QtCore.qVersion()
-        if cmpVersions(qtVersion, (5, 15, 2)):
+        if cmpVersions(qtVersion, (6, 11, 2)):
             print('  Qt Version {0} -> OK'.format(qtVersion))
         else:
-            print('  Qt Version {0} -> Sorry, 5.15.2 or higher is required'
+            print('  Qt Version {0} -> Sorry, 6.11.2 or higher is required'
                   .format(qtVersion))
             sys.exit(3)
         pyqtVersion = QtCore.PYQT_VERSION_STR
-        if cmpVersions(pyqtVersion, (5, 15, 2)):
+        if cmpVersions(pyqtVersion, (6, 11, 0)):
             print('  PyQt Version {0} -> OK'.format(pyqtVersion))
         else:
-            print('  PyQt Version {0} -> Sorry, 5.15.2 or higher is required'
+            print('  PyQt Version {0} -> Sorry, 6.11.0 or higher is required'
                   .format(pyqtVersion))
             sys.exit(3)
 
@@ -234,7 +236,8 @@ def main():
     if os.path.isdir('translations') and translated:
         translationDir = os.path.join(pythonBuildDir, 'translations')
         print('  Copying translation files to {0}'.format(translationDir))
-        copyDir('translations', translationDir)
+        # Only application catalogues; widget qtbase files belong to Qt6 itself.
+        copyDir('translations', translationDir, prefix='convertall_')
     if os.path.isdir('doc'):
         docPrefixDir = docDir.replace('<prefix>/', '')
         if not os.path.isabs(docPrefixDir):

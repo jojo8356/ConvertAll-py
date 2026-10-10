@@ -15,9 +15,9 @@
 import re
 import sys
 import math
-from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtGui import QValidator
-from PyQt5.QtWidgets import (QLineEdit, QMessageBox)
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtGui import QValidator
+from PyQt6.QtWidgets import (QLineEdit, QMessageBox)
 import unitdata
 
 
@@ -142,5 +142,5 @@ class FloatExprValidator(QValidator):
         """Check for valid characters in entry.
         """
         if FloatExprValidator.invalidRe.search(inputStr):
-            return (QValidator.Invalid, inputStr, pos)
-        return (QValidator.Acceptable, inputStr, pos)
+            return (QValidator.State.Invalid, inputStr, pos)
+        return (QValidator.State.Acceptable, inputStr, pos)

@@ -8,7 +8,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
-os.environ['QT_API'] = 'pyqt5'
+os.environ['QT_API'] = 'pyqt6'
 # Windows' offscreen plugin uses the basic font database, not the native
 # Windows font discovery. Point it at fonts already installed on the host,
 # before pytest-qt creates QApplication; do not bundle or download fonts.
@@ -110,12 +110,12 @@ def window(qtbot, monkeypatch, isolated_environment):
 
 @pytest.fixture
 def enter_units(window, qtbot):
-    from PyQt5.QtCore import Qt
+    from PyQt6.QtCore import Qt
     def enter(source, target):
         for edit, text in ((window.fromUnitEdit, source),
                            (window.toUnitEdit, target)):
             edit.setFocus()
-            qtbot.keyClick(edit, Qt.Key_A, modifier=Qt.ControlModifier)
+            qtbot.keyClick(edit, Qt.Key.Key_A, modifier=Qt.KeyboardModifier.ControlModifier)
             qtbot.keyClicks(edit, text)
         return window
     return enter

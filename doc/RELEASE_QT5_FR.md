@@ -1,5 +1,11 @@
 # ConvertAll 0.8.1 — validation et publication de la release Qt5
 
+> **Guide historique Qt5.** Les sources actuelles sont Qt6 0.9.0 : ne pas
+> exécuter les profils/commandes Qt5 ci-dessous sur cet arbre. La référence
+> Qt5 validée finale est `b10b8e7837e30a2ec9a957a9a2519e4ac0334db3`
+> (CI utilisateur `38075371349`). Utiliser son checkout/archive séparé,
+> sans retargeter `v0.8.1`. Voir `RELEASE_QT6_FR.md` pour les nouvelles sources.
+
 **Préparation du 10 octobre 2026.** Cette maintenance conserve **PyQt5** : elle
 n'effectue pas la migration Qt6. La version `0.8.1` doit désigner le **nouveau
 commit contenant les corrections et tests**, jamais le commit historique

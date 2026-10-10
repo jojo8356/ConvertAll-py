@@ -1,7 +1,7 @@
 """Numeric preference validation must agree with repr()/float(), not OS locale."""
 import pytest
-from PyQt5.QtCore import QLocale
-from PyQt5.QtGui import QValidator
+from PyQt6.QtCore import QLocale
+from PyQt6.QtGui import QValidator
 
 import optiondlg
 
@@ -22,7 +22,7 @@ def test_double_preference_accepts_python_numbers_in_any_default_locale(
         assert item.control.text() == '1.0'
         validator = item.control.validator()
         assert validator.locale().name() == 'C'
-        assert validator.validate(text, len(text))[0] == QValidator.Acceptable
+        assert validator.validate(text, len(text))[0] == QValidator.State.Acceptable
         item.control.setText(text)
         dialog.accept()
         assert options.numData('TestNumber') == pytest.approx(float(text))
@@ -43,7 +43,7 @@ def test_double_preference_rejects_localized_or_grouped_numbers_without_crashing
         dialog = optiondlg.OptionDlg(options)
         qtbot.addWidget(dialog)
         item = optiondlg.OptionDlgDbl(dialog, 'TestNumber', 'number', 0, 10000)
-        assert item.control.validator().validate(text, len(text))[0] != QValidator.Acceptable
+        assert item.control.validator().validate(text, len(text))[0] != QValidator.State.Acceptable
         item.control.setText(text)
         dialog.accept()  # no ValueError from float(), and no silent new value
         assert options.numData('TestNumber') == 1.0

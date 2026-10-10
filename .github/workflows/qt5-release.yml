@@ -1,8 +1,6 @@
-name: Qt5 release validation
+name: Qt5 archived reference
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -28,6 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: b10b8e7837e30a2ec9a957a9a2519e4ac0334db3
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -74,6 +73,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: b10b8e7837e30a2ec9a957a9a2519e4ac0334db3
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -100,7 +100,7 @@ jobs:
         run: python tools/check_bundle.py dist/convertall
       - name: Create immutable source archive
         if: runner.os == 'Linux'
-        run: python tools/release_source.py --commit ${{ github.sha }}
+        run: python tools/release_source.py --commit b10b8e7837e30a2ec9a957a9a2519e4ac0334db3
       - name: Save native bundle (not a published installer)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -112,7 +112,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: qt5-source-${{ github.sha }}
+          name: qt5-source-b10b8e7837e30a2ec9a957a9a2519e4ac0334db3
           path: dist/release/
           retention-days: 14
           if-no-files-found: error

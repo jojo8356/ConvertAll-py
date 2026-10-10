@@ -24,6 +24,9 @@ def run_script(script, *args, cwd=None):
     ('3.10', (3, 10, 0), True), ('3.9.9', (3, 10), False),
     ('5.15.19', (5, 15, 2), True), ('Qt 5.15.2', (5, 15), True),
     ('not a version', (5, 15), False), ('5.4', (5, 15), False),
+    ('3.11', (3, 11), True), ('3.10.9', (3, 11), False),
+    ('6.11.2', (6, 11, 2), True), ('6.11.0', (6, 11, 2), False),
+    ('PyQt 6.11.0', (6, 11, 0), True), ('6.10.3', (6, 11, 0), False),
 ])
 def test_dependency_version_comparison(version, minimum, expected):
     assert install.cmpVersions(version, minimum) is expected
@@ -68,6 +71,10 @@ def test_isolated_install_runs_cli_and_uninstall_leaves_no_app(translated, tmp_p
     assert (prefix / 'share/icons/convertall/convertall_med.png').is_file()
     assert (installed / 'data/units_fr.dat').exists() is translated
     assert (installed / 'translations').exists() is translated
+    assert (prefix / 'share/doc/convertall/LICENSE-GPL-3.0').is_file()
+    if translated:
+        assert (installed / 'translations/convertall_fr.qm').is_file()
+        assert not list((installed / 'translations').glob('qt_*.qm'))
     wrapper = prefix / 'bin/convertall'
     cli = subprocess.run([str(wrapper), '-q', '1', 'in', 'cm'],
                          capture_output=True, text=True, timeout=20)

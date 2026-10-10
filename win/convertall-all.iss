@@ -5,13 +5,16 @@
 
 [Setup]
 AppName=ConvertAll
-AppVersion=0.8.1
+AppVersion=0.9.0
+MinVersion=10.0.17763
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 DefaultDirName={pf}\ConvertAll
 DefaultGroupName=ConvertAll
 DisableProgramGroupPage=yes
 OutputDir=.
-OutputBaseFilename=convertall-0.8.1-install-all
-PrivilegesRequired=poweruser
+OutputBaseFilename=convertall-0.9.0-install-all
+PrivilegesRequired=admin
 SetupIconFile=convertall.ico
 Uninstallable=IsTaskSelected('adduninstall')
 UninstallDisplayIcon={app}\convertall.exe,0
@@ -32,6 +35,8 @@ Type: files; Name: "{app}\*.dll"
 Type: filesandordirs; Name: "{app}\lib"
 Type: filesandordirs; Name: "{app}\imageformats"
 Type: filesandordirs; Name: "{app}\platforms"
+Type: filesandordirs; Name: "{app}\PyQt5"
+Type: filesandordirs; Name: "{app}\_internal"
 
 [Files]
 Source: "convertall.exe"; DestDir: "{app}"
@@ -39,10 +44,10 @@ Source: "base_library.zip"; DestDir: "{app}"
 Source: "convertall_dos.exe"; DestDir: "{app}"
 Source: "*.dll"; DestDir: "{app}"
 Source: "*.pyd"; DestDir: "{app}"
-Source: "PyQt5\*"; DestDir: "{app}\PyQt5"; Flags: recursesubdirs createallsubdirs
+Source: "PyQt6\*"; DestDir: "{app}\PyQt6"; Flags: recursesubdirs createallsubdirs
 Source: "data\*.dat"; DestDir: "{app}\data"
 Source: "doc\*.html"; DestDir: "{app}\doc"
-Source: "doc\LICENSE"; DestDir: "{app}\doc"
+Source: "doc\LICENSE*"; DestDir: "{app}\doc"
 Source: "icons\*.png"; DestDir: "{app}\icons"
 Source: "translations\*.qm"; DestDir: "{app}\translations"; Tasks: "translate"
 Source: "source\*.py"; DestDir: "{app}\source"; Tasks: "source"

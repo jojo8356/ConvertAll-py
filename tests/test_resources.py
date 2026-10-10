@@ -3,8 +3,8 @@ import re
 import xml.etree.ElementTree as ET
 
 import pytest
-from PyQt5.QtCore import QCoreApplication, QTranslator, QUrl
-from PyQt5.QtGui import QTextCursor
+from PyQt6.QtCore import QCoreApplication, QLibraryInfo, QTranslator, QUrl
+from PyQt6.QtGui import QTextCursor
 
 from helpers import ROOT
 import convertall
@@ -38,10 +38,12 @@ def test_all_app_catalogues_load_and_translate_active_ts_messages(qapp, language
     assert translator.translate('convertdlg', 'From Unit') != 'From Unit'
 
 
-@pytest.mark.parametrize('language', ['de', 'es', 'fr', 'ru', 'sv'])
-def test_shipped_qt_catalogues_are_readable(qapp, language):
+@pytest.mark.parametrize('language', ['ca', 'de', 'es', 'fr', 'ru', 'sv'])
+def test_qt6_runtime_qtbase_catalogues_are_readable(qapp, language):
     translator = QTranslator()
-    assert translator.load(str(ROOT / 'translations' / f'qt_{language}.qm'))
+    path = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+    assert translator.load(f'qtbase_{language}', path)
+    assert not translator.isEmpty()
 
 
 def test_translator_region_fallback_and_missing_file(qapp, monkeypatch, capsys):
@@ -93,14 +95,14 @@ def test_help_local_document_find_next_previous_and_links(window, qtbot, monkeyp
     view.findEdit.setText('ConvertAll')
     view.findTextChanged('ConvertAll')
     assert view.findNextAct.isEnabled() and view.findPreviousAct.isEnabled()
-    view.textView.moveCursor(QTextCursor.Start)
+    view.textView.moveCursor(QTextCursor.MoveOperation.Start)
     view.findNext()
     assert view.textView.textCursor().selectedText() == 'ConvertAll'
     view.findPrevious()
     view.findEdit.setText('a-string-that-is-not-in-the-manual')
     view.findNext()
     assert 'not found' in view.statusBar().currentMessage()
-    view.showLink('https://example.invalid/')
+    view.showLink(QUrl('https://example.invalid/'))
     assert view.statusBar().currentMessage() == 'https://example.invalid/'
     links = []
     monkeypatch.setattr(helpview.webbrowser, 'open', lambda *args: links.append(args))

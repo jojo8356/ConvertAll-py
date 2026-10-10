@@ -1,10 +1,10 @@
-"""Real Qt5 signal/keyboard tests. Do not replace the conversion engine."""
+"""Real Qt6 signal/keyboard tests. Do not replace the conversion engine."""
 from pathlib import Path
 
 import pytest
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont, QValidator
-from PyQt5.QtWidgets import (QAction, QApplication, QDialog, QLabel, QMenu, QMessageBox,
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QAction, QFont, QValidator
+from PyQt6.QtWidgets import (QApplication, QDialog, QLabel, QMenu, QMessageBox,
                              QSpinBox)
 
 from helpers import ROOT
@@ -21,7 +21,7 @@ pytestmark = pytest.mark.gui
 
 def replace_number(edit, text, qtbot):
     edit.setFocus()
-    qtbot.keyClick(edit, Qt.Key_A, modifier=Qt.ControlModifier)
+    qtbot.keyClick(edit, Qt.Key.Key_A, modifier=Qt.KeyboardModifier.ControlModifier)
     qtbot.keyClicks(edit, text)
 
 
@@ -74,20 +74,20 @@ def test_filter_keyboard_completion_and_operator_buttons(window, qtbot):
     edit.setFocus()
     qtbot.keyClicks(edit, 'milli')
     assert 0 < window.unitListView.topLevelItemCount() < 626
-    for key in [Qt.Key_Down, Qt.Key_Up, Qt.Key_PageDown, Qt.Key_PageUp]:
+    for key in [Qt.Key.Key_Down, Qt.Key.Key_Up, Qt.Key.Key_PageDown, Qt.Key.Key_PageUp]:
         qtbot.keyClick(edit, key)
-    qtbot.keyClick(edit, Qt.Key_Return)
+    qtbot.keyClick(edit, Qt.Key.Key_Return)
     assert window.fromGroup.groupValid()
-    qtbot.mouseClick(window.textButtons[0], Qt.LeftButton)
+    qtbot.mouseClick(window.textButtons[0], Qt.MouseButton.LeftButton)
     assert window.fromGroup.currentUnit().exp == 2
-    qtbot.mouseClick(window.textButtons[1], Qt.LeftButton)
+    qtbot.mouseClick(window.textButtons[1], Qt.MouseButton.LeftButton)
     assert window.fromGroup.currentUnit().exp == 3
-    qtbot.mouseClick(window.textButtons[2], Qt.LeftButton)
+    qtbot.mouseClick(window.textButtons[2], Qt.MouseButton.LeftButton)
     qtbot.keyClicks(edit, 's')
     assert len(window.fromGroup.flatUnitList()) == 2
-    qtbot.mouseClick(window.clearButton, Qt.LeftButton)
+    qtbot.mouseClick(window.clearButton, Qt.MouseButton.LeftButton)
     assert edit.text() == '' and not window.fromGroup.groupValid()
-    qtbot.keyClick(edit, Qt.Key_Tab)
+    qtbot.keyClick(edit, Qt.Key.Key_Tab)
 
 
 def test_type_filter_and_sort(window, qtbot):
@@ -100,7 +100,7 @@ def test_type_filter_and_sort(window, qtbot):
     window.filterMenu()  # a second click clears the filter
     assert window.unitListView.topLevelItemCount() == 626
     for column in range(3):
-        window.unitListView.header().setSortIndicator(column, Qt.DescendingOrder)
+        window.unitListView.header().setSortIndicator(column, Qt.SortOrder.DescendingOrder)
         window.unitListView.changeSort()
         texts = [window.unitListView.topLevelItem(i).text(column).lower()
                  for i in range(window.unitListView.topLevelItemCount())]
@@ -114,12 +114,12 @@ def test_recent_menu_inserts_unit_and_clear_filter_menu(window, enter_units, qtb
         action = menu.actions()[0]
         menu.triggered.emit(action)
         return action
-    monkeypatch.setattr(QMenu, 'exec_', choose)
-    qtbot.mouseClick(window.recentButton, Qt.LeftButton)
+    monkeypatch.setattr(QMenu, 'exec', choose)
+    qtbot.mouseClick(window.recentButton, Qt.MouseButton.LeftButton)
     assert window.fromGroup.groupValid()
-    qtbot.mouseClick(window.filterButton, Qt.LeftButton)
+    qtbot.mouseClick(window.filterButton, Qt.MouseButton.LeftButton)
     assert window.unitListView.typeFilter
-    qtbot.mouseClick(window.filterButton, Qt.LeftButton)
+    qtbot.mouseClick(window.filterButton, Qt.MouseButton.LeftButton)
     assert not window.unitListView.typeFilter
 
 
@@ -143,7 +143,7 @@ def test_about_reports_correct_version(window, monkeypatch):
     messages = []
     monkeypatch.setattr(QMessageBox, 'about', lambda *args: messages.append(args[2]))
     window.about()
-    assert '0.8.1' in messages[0] and 'Doug Bell' in messages[0]
+    assert '0.9.0' in messages[0] and 'Doug Bell' in messages[0]
 
 
 def test_close_saves_geometry_history_and_reopens(window, enter_units, qtbot):
@@ -207,7 +207,7 @@ def test_fonts_system_custom_and_serialization(qapp, qtbot):
 def test_number_expression_validator(qapp, text, valid):
     validator = numedit.FloatExprValidator(None)
     state, _, _ = validator.validate(text, len(text))
-    assert (state == QValidator.Acceptable) is valid
+    assert (state == QValidator.State.Acceptable) is valid
 
 
 def test_generic_option_controls_apply_only_on_accept(options, qtbot):
@@ -226,7 +226,7 @@ def test_generic_option_controls_apply_only_on_accept(options, qtbot):
     dialog.startNewColumn()
     clicked = []
     push = optiondlg.OptionDlgPush(dialog, 'button', lambda: clicked.append(True))
-    qtbot.mouseClick(push.control, Qt.LeftButton)
+    qtbot.mouseClick(push.control, Qt.MouseButton.LeftButton)
     assert clicked
     boolean.control.setChecked(False)
     integer.control.setValue(4)
@@ -268,7 +268,7 @@ def test_bases_dialog_keyboard_and_bit_settings(window, qtbot, monkeypatch):
     def answer():
         popup = QApplication.activeModalWidget()
         popup.findChildren(QSpinBox)[0].setValue(8)
-        from PyQt5.QtWidgets import QCheckBox
+        from PyQt6.QtWidgets import QCheckBox
         popup.findChildren(QCheckBox)[0].setChecked(True)
         popup.accept()
     QTimer.singleShot(0, answer)
@@ -305,8 +305,8 @@ def test_fraction_dialog_expression_results_and_errors(window, qtbot, monkeypatc
 @pytest.mark.parametrize('theme,accept', [('dark', True), ('system', True),
                                         ('custom', True), ('dark', False)])
 def test_color_dialog_themes_accept_cancel_and_swatch(window, qapp, qtbot, monkeypatch, theme, accept):
-    from PyQt5.QtGui import QColor, QPalette
-    from PyQt5.QtWidgets import QColorDialog
+    from PyQt6.QtGui import QColor, QPalette
+    from PyQt6.QtWidgets import QColorDialog
     import colorset
     original = qapp.palette()
     before = window.option.strData('ColorTheme')
@@ -316,14 +316,14 @@ def test_color_dialog_themes_accept_cancel_and_swatch(window, qapp, qtbot, monke
         control.setCurrentIndex(control.findData(colorset.ThemeSetting[theme]))
         if theme == 'custom':
             monkeypatch.setattr(QColorDialog, 'getColor', lambda *args: QColor('#123456'))
-            qtbot.mouseClick(window.colorSet.colors[0].swatch, Qt.LeftButton)
+            qtbot.mouseClick(window.colorSet.colors[0].swatch, Qt.MouseButton.LeftButton)
         popup.accept() if accept else popup.reject()
     try:
         QTimer.singleShot(0, answer)
         window.showColorDlg()
         assert window.option.strData('ColorTheme') == (theme if accept else before)
         if theme == 'dark' and accept:
-            assert qapp.palette().color(QPalette.Window).name() == '#353535'
+            assert qapp.palette().color(QPalette.ColorRole.Window).name() == '#353535'
         if theme == 'custom':
             assert window.option.strData('WindowColor') == '123456'
     finally:
