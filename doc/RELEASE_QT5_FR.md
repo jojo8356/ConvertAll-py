@@ -98,13 +98,30 @@ numérique. Le validateur Qt dépendait de la locale système alors que le champ
 utilise `repr()` / `float()` avec un point décimal. Correctif ajouté : locale C
 limitée à ce validateur et rejet des séparateurs de milliers, sans modifier la
 locale générale de l'application. **27 contrôles de non-régression** C/français/
-allemand ont été ajoutés. Leur résultat et la nouvelle passe complète restent
-à confirmer par l'utilisateur ; aucun test n'a été relancé ici après ce retour.
+allemand ont été ajoutés. Au commit `9a16283`, l'utilisateur a confirmé **4 502
+succès, zéro échec, zéro skip, couverture 90,15 %** sur Debian/Python 3.11.2/Qt
+5.15.19. Le build PyInstaller et le contrôle du bundle Linux (CLI, sept
+catalogues, traductions, GUI/ressources offscreen) ont également réussi. Aucun
+test n'a été relancé ici après ces retours.
+
+### Premier retour CI multiplateforme
+
+La CI `38072767122`, au commit `9a16283`, a réussi les trois jobs Ubuntu/Python
+3.10, 3.11 et 3.14, mais échoué les trois jobs Windows. Le rapport JUnit Windows
+3.11 indique cinq échecs : deux contrôles de polices sans font directory en mode
+offscreen, un wrapper POSIX utilisant le séparateur du système hôte, un manuel
+UTF-8 lu via CP1252, et des clés d'empreintes contenant des antislashs. Correctifs
+ajoutés sans retirer ces contrôles : `QT_QPA_FONTDIR` pointe sur les polices
+Windows déjà installées, chemins de wrapper explicitement POSIX, lectures des
+fichiers du dépôt explicitement UTF-8, clés de provenance via `as_posix()`.
+Les six jobs tests et les deux builds du **nouveau SHA** restent à confirmer.
+Les jobs bundle du premier run étaient ignorés, pas réussis.
 
 ### Pas encore validé ici
 
-- **CI distante Linux/Windows non exécutée** : le workflow est préparé, pas poussé.
-  La matrice 3.10/3.11/3.14 n'est donc pas une liste de résultats déjà acquis.
+- **CI complète du candidat corrigé encore en attente** : le premier run a
+  confirmé les trois jobs Linux, mais pas Windows ni les deux bundles CI.
+  Ne pas présenter toute la matrice comme réussie avant un run entièrement vert.
 - Tentative du **nouveau** spec PyInstaller local : arrêt avant l'analyse complète
   faute de `libpython3.11.so.1.0` dans ce sandbox. **Aucun binaire local validé.**
   Les runners `setup-python` doivent vérifier le build natif réel.

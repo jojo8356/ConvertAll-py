@@ -20,6 +20,7 @@ def test_release_environment_versions_are_explicit():
     assert 'data/units.dat' in hashes
     assert all(len(value) == 64 for value in hashes.values())
     assert not any('__pycache__' in name for name in hashes)
+    assert all('\\' not in name for name in hashes)  # canonical JSON paths on every OS
 
 
 @pytest.mark.parametrize('source', ["__version__ = '0.8.1-beta'", 'x = 1',

@@ -20,9 +20,9 @@ pytestmark = pytest.mark.packaging
 def test_versions_are_consistent_without_rewriting_history():
     version = convertall.__version__
     assert version == '0.8.1'
-    assert release_source.version_from_source((ROOT / 'source/convertall.py').read_text()) == version
+    assert release_source.version_from_source((ROOT / 'source/convertall.py').read_text(encoding='utf-8')) == version
     for path in (ROOT / 'win').glob('*.iss'):
-        text = path.read_text()
+        text = path.read_text(encoding='utf-8')
         assert f'AppVersion={version}' in text
         assert f'convertall-{version}-install' in text
         assert 'convertall.exe.manifest' not in text
@@ -30,12 +30,12 @@ def test_versions_are_consistent_without_rewriting_history():
     for folder in ('doc', 'docs'):
         for path in (ROOT / folder).glob('README*.html'):
             # The first version is the manual header; old changelog versions
-            # are intentionally retained.
-            assert re.search(r'0\.\d+\.\d+', path.read_text()).group() == version, path
-    setup = (ROOT / 'source/setup.py').read_text()
+            # are intentionally retained. Manuals are UTF-8, not Windows ANSI.
+            assert re.search(r'0\.\d+\.\d+', path.read_text(encoding='utf-8')).group() == version, path
+    setup = (ROOT / 'source/setup.py').read_text(encoding='utf-8')
     assert 'from convertall import __version__' in setup
     assert '../../convertall-' + version in setup
-    assert '0.8.0' in (ROOT / 'doc/README.html').read_text()
+    assert '0.8.0' in (ROOT / 'doc/README.html').read_text(encoding='utf-8')
 
 
 def test_all_python_source_files_compile():
@@ -48,19 +48,19 @@ def test_all_python_source_files_compile():
 
 
 def test_runtime_is_pinned_to_qt5_only():
-    text = (ROOT / 'requirements-qt5.txt').read_text()
+    text = (ROOT / 'requirements-qt5.txt').read_text(encoding='utf-8')
     for expected in ('PyQt5==5.15.11', 'PyQt5-sip==12.20.0',
                      'PyQt5-Qt5==5.15.19', 'PyQt5-Qt5==5.15.2'):
         assert expected in text
     assert 'PyQt6' not in text and 'PySide' not in text
     for path in (ROOT / 'source').glob('*.py'):
-        tree = ast.parse(path.read_text())
+        tree = ast.parse(path.read_text(encoding='utf-8'))
         imports = [n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)]
         assert not any(name and name.startswith(('PyQt6', 'PySide')) for name in imports)
 
 
 def test_pyinstaller_recipe_has_no_machine_specific_path_or_removed_crypto_api():
-    text = (ROOT / 'source/convertall.spec').read_text()
+    text = (ROOT / 'source/convertall.spec').read_text(encoding='utf-8')
     for required in ("Path(SPECPATH)", "contents_directory='.'", "'convertall_dos'",
                      "'data'", "'icons'", "'doc'", "'translations'"):
         assert required in text
@@ -84,10 +84,10 @@ def test_archive_reproducible_checksum_commit_and_extracted_cli(committed_copy, 
     project, git = committed_copy
     first = release_source.create_archive(project, project / 'dist/release')
     content = first[0].read_bytes()
-    metadata = json.loads(first[2].read_text())
+    metadata = json.loads(first[2].read_text(encoding='utf-8'))
     assert metadata['source_commit'] == git('rev-parse', 'HEAD').decode().strip()
     assert metadata['sha256'] == hashlib.sha256(content).hexdigest()
-    assert first[1].read_text().strip() == f"{metadata['sha256']}  {first[0].name}"
+    assert first[1].read_text(encoding='utf-8').strip() == f"{metadata['sha256']}  {first[0].name}"
     second = release_source.create_archive(project, project / 'dist/release')
     assert second[0].read_bytes() == content
     commit = subprocess.check_output(['git', 'get-tar-commit-id'], input=gzip.decompress(content))
@@ -119,7 +119,7 @@ def test_archive_reproducible_checksum_commit_and_extracted_cli(committed_copy, 
 def test_archive_refuses_dirty_tree_or_another_commit(committed_copy):
     project, git = committed_copy
     head = git('rev-parse', 'HEAD').decode().strip()
-    (project / 'untracked.txt').write_text('not committed')
+    (project / 'untracked.txt').write_text('not committed', encoding='utf-8')
     with pytest.raises(ValueError, match='dirty'):
         release_source.create_archive(project, project / 'dist/release')
     (project / 'untracked.txt').unlink()

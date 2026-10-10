@@ -33,7 +33,9 @@ def input_hashes():
                                       'requirements-qt5.txt', 'requirements-test.txt',
                                       'requirements-build.txt', 'pytest.ini', '.coveragerc',
                                       '.gitignore', '.gitattributes', 'convertall.desktop')]
-    return {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
+    # JSON identifiers are portable POSIX paths, even on Windows. File bytes
+    # remain unmodified: the digest still describes this exact working tree.
+    return {path.relative_to(ROOT).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in sorted(paths)}
 
 

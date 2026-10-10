@@ -15,6 +15,7 @@
 
 import sys
 import os.path
+import posixpath
 import getopt
 import shutil
 import compileall
@@ -105,10 +106,12 @@ def createWrapper(execDir, execName):
         execDir -- the path where the executable is placed
         execName -- the name for the executable file
     """
-    script = os.path.join(execDir, execName + '.py')
+    # This emits a POSIX /bin/sh wrapper, including when its quoting is
+    # tested on Windows. Use the target shell's separators, not the host's.
+    script = posixpath.join(execDir, execName + '.py')
     text = '#!/bin/sh\n\nexec {0} {1} "$@"\n'.format(
         shlex.quote(sys.executable), shlex.quote(script))
-    with open(execName, 'w') as f:
+    with open(execName, 'w', encoding='utf-8', newline='\n') as f:
         f.write(text)
     os.chmod(execName, 0o755)
 

@@ -9,6 +9,17 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 os.environ['QT_API'] = 'pyqt5'
+# Windows' offscreen plugin uses the basic font database, not the native
+# Windows font discovery. Point it at fonts already installed on the host,
+# before pytest-qt creates QApplication; do not bundle or download fonts.
+if (sys.platform == 'win32'
+        and os.environ['QT_QPA_PLATFORM'].split(':', 1)[0] == 'offscreen'
+        and not os.environ.get('QT_QPA_FONTDIR')):
+    windows_dir = os.environ.get('WINDIR') or os.environ.get('SystemRoot')
+    if windows_dir:
+        font_dir = Path(windows_dir) / 'Fonts'
+        if font_dir.is_dir():
+            os.environ['QT_QPA_FONTDIR'] = str(font_dir)
 builtins._ = lambda text, comment='': text
 
 import option

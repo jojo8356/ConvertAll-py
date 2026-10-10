@@ -36,16 +36,19 @@ def test_installer_help_and_unknown_option(script):
     assert run_script(ROOT / script, '--bad-option').returncode == 2
 
 
-def test_wrapper_quotes_python_and_script_paths(tmp_path, monkeypatch):
+@pytest.mark.parametrize('path_name', ["a path/with 'quotes'", 'plain', 'mètre et 日本語'])
+def test_wrapper_quotes_python_and_script_paths(tmp_path, monkeypatch, path_name):
     monkeypatch.chdir(tmp_path)
-    executable = "/a path/with 'quotes'/python"
-    script_dir = "/a path/with 'quotes'/convertall"
+    executable = f'/{path_name}/python'
+    script_dir = f'/{path_name}/convertall'
     monkeypatch.setattr(sys, 'executable', executable)
     install.createWrapper(script_dir, 'convertall')
-    text = (tmp_path / 'convertall').read_text()
+    wrapper = tmp_path / 'convertall'
+    text = wrapper.read_text(encoding='utf-8')
     words = shlex.split(text.split('exec ', 1)[1])
     assert words == [executable, script_dir + '/convertall.py', '$@']
     assert text.startswith('#!/bin/sh')
+    assert b'\r\n' not in wrapper.read_bytes()  # POSIX script even on a Windows host
 
 
 @pytest.mark.skipif(sys.platform == 'win32', reason='Unix shell installer; Windows is covered by the native bundle CI job')
