@@ -13,7 +13,7 @@
 #*****************************************************************************
 
 from PyQt6.QtCore import (QSize, Qt)
-from PyQt6.QtGui import (QFontDatabase, QFontInfo, QIntValidator)
+from PyQt6.QtGui import (QFont, QFontDatabase, QFontInfo, QIntValidator)
 from PyQt6.QtWidgets import (QAbstractItemView, QCheckBox, QDialog,
                              QGridLayout, QGroupBox, QHBoxLayout, QLabel,
                              QLineEdit, QListWidget, QPushButton, QVBoxLayout)

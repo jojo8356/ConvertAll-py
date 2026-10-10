@@ -1,8 +1,12 @@
 # ConvertAll 0.9.0 — Python / Qt6
 
-**Candidat : validation Qt6 de production en attente.** Ce fichier décrit le
-code proposé, pas des tests déjà réussis. Avant publication, compléter le
-texte du draft avec le SHA/run CI et les résultats réellement observés.
+**Candidat : validation complète Qt6 de production en attente.** Le premier
+retour utilisateur au SHA `6a51c01` donne 4553 PASS / 9 FAIL (couverture 90,46 %),
+pas une version validée. Correctifs : import QFont pour restaurer les fontes ;
+diagnostic/checker distinguant paquet PyQt6-sip et générateur SIP, métadonnées
+SIP conservées dans le bundle. Leur nouveau SHA doit être revalidé. Avant
+publication, compléter le texte du draft avec le SHA/run CI et les résultats
+réellement observés.
 
 ## Changements
 
@@ -34,7 +38,7 @@ Ses tags ne sont ni retargetés ni remplacés.
 
 ## Limites et exigences avant Latest
 
-- Pas encore de résultat Qt6 0.9.0 annoncé dans ces notes.
+- Pas encore de validation complète Qt6 0.9.0 : correctifs à retester et bundle non validé.
 - Les tests/bundles offscreen ne certifient pas bureau réel, DPI fractionnaire,
   multi-écrans, GPU/Wayland ni installation Inno. macOS n'est pas certifié.
 - Windows 10 1809+ / Windows 11 x64 ; plus XP/Vista/7/8.

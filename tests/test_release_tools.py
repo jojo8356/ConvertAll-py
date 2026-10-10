@@ -137,3 +137,35 @@ def test_gate_refuses_ci_sha_mismatch(tmp_path, monkeypatch):
     report = json.loads((tmp_path / 'build/test-results/validation.json').read_text(encoding='utf-8'))
     assert 'GITHUB_SHA' in report['prerequisite_error']
     assert not report['release_eligible']
+
+
+@pytest.fixture
+def frozen_runtime_info():
+    return {'application': 'ConvertAll', 'version': '0.9.0', 'binding': 'PyQt6',
+            'pyqt_binding': '6.11.0', 'qt_runtime': '6.11.2',
+            'sip_package': '13.13.0', 'sip_generator': '6.17.0'}
+
+
+def test_bundle_checks_sip_distribution_separately_from_generator(frozen_runtime_info):
+    check_bundle.validate_runtime_info(frozen_runtime_info)
+
+
+@pytest.mark.parametrize('package', ['6.17.0', '13.12.0', None])
+def test_bundle_rejects_wrong_sip_distribution(frozen_runtime_info, package):
+    frozen_runtime_info['sip_package'] = package
+    with pytest.raises(RuntimeError, match='Wrong frozen Qt6 runtime'):
+        check_bundle.validate_runtime_info(frozen_runtime_info)
+
+
+@pytest.mark.parametrize('generator', ['', None, []])
+def test_bundle_requires_an_explicit_sip_generator(frozen_runtime_info, generator):
+    frozen_runtime_info['sip_generator'] = generator
+    with pytest.raises(RuntimeError, match='SIP generator'):
+        check_bundle.validate_runtime_info(frozen_runtime_info)
+
+
+def test_bundle_rejects_old_ambiguous_sip_report(frozen_runtime_info):
+    frozen_runtime_info['sip'] = frozen_runtime_info.pop('sip_generator')
+    frozen_runtime_info.pop('sip_package')
+    with pytest.raises(RuntimeError, match='Wrong frozen Qt6 runtime'):
+        check_bundle.validate_runtime_info(frozen_runtime_info)

@@ -4,6 +4,29 @@
 n'a été exécuté par l'agent pour ce portage ; l'utilisateur les exécute.
 Le benchmark historique 0.8.0 et la CI Qt5 verte ne sont pas des résultats Qt6.
 
+### Premier retour utilisateur et correctif (10 octobre 2026)
+
+Au SHA **`6a51c01fe9a900db2d56a5183e2344529304dc39`**, Linux/Python 3.11.2,
+glibc 2.36, PyQt6 6.11.0 / Qt 6.11.2 : **4553 PASS, 9 FAIL, 0 ERROR,
+0 SKIP**, 58,59 s pytest, **90,46 %** de couverture. Le build/checker natif
+n'ont pas été exécutés, conformément au gate source en échec.
+
+Deux causes : import `QFont` manquant lors de la restauration des fontes (8
+échecs) ; diagnostic SIP comparant `sip.SIP_VERSION_STR` **6.17.0** au paquet
+**PyQt6-sip 13.13.0** (1 échec). Le correctif importe réellement QFont,
+sépare les champs JSON `sip_package` / `sip_generator`, conserve le contrôle
+du paquet épinglé et embarque ses métadonnées dans le bundle et les recettes
+Inno. Sans ces métadonnées, le diagnostic échoue au lieu d'inventer une version.
+
+Ce premier rapport n'est **pas** une validation du correctif. Après `git pull`,
+les dépendances n'ayant pas changé, le même venv peut être réutilisé :
+
+```bash
+bash test_all_qt6.sh --no-install --python .venv/test-all-qt6/bin/python
+```
+
+Le lanceur reteste tout puis construit/contrôle le bundle si la suite passe.
+
 Qt5 0.8.1 reste au SHA `b10b8e7837e30a2ec9a957a9a2519e4ac0334db3`.
 Ne pas modifier `v0.8.1` ni fabriquer ses assets depuis les sources Qt6.
 Le workflow Qt5 manuel extrait ce commit. Le nouveau workflow Qt6 teste le

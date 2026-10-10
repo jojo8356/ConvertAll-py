@@ -182,3 +182,26 @@ def test_invalid_qt6_font_state_uses_valid_legacy_font(qapp, options):
     fontset.storeFontOptions(options, font)
     options.changeData('GuiFontQt6', 'invalid,font,state', False)
     assert fontset.fontFromOptions(options).pointSize() == 15
+
+
+@pytest.mark.parametrize('full_state', [False, True])
+def test_main_window_restores_saved_font_on_startup(window, qapp, qtbot, full_state):
+    import fontset
+    original = QFont(qapp.font())
+    font = QFont(original)
+    font.setPointSize(15)
+    font.setWeight(QFont.Weight.Bold)
+    if full_state:
+        fontset.storeFontOptions(window.option, font)
+    else:
+        window.option.changeData('GuiFont', fontset.legacyFontString(font), True)
+    assert window.option.writeChanges()
+    try:
+        reopened = convertdlg.ConvertDlg()
+        qtbot.addWidget(reopened)
+        assert reopened.guiFont is not None
+        assert reopened.guiFont.pointSize() == 15
+        assert reopened.guiFont.weight() == QFont.Weight.Bold
+        assert qapp.font().pointSize() == 15
+    finally:
+        qapp.setFont(original)

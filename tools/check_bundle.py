@@ -23,6 +23,18 @@ sys.path.insert(0, str(ROOT / 'source'))
 from convertall import __version__
 
 
+def validate_runtime_info(runtime):
+    """Check wheel/runtime pins without treating the SIP generator as a wheel."""
+    expected = {'application': 'ConvertAll', 'version': __version__, 'binding': 'PyQt6',
+                'pyqt_binding': '6.11.0', 'qt_runtime': '6.11.2',
+                'sip_package': '13.13.0'}
+    if not isinstance(runtime, dict) or any(runtime.get(key) != value for key, value in expected.items()):
+        raise RuntimeError(f'Wrong frozen Qt6 runtime: {runtime}; expected {expected}')
+    generator = runtime.get('sip_generator')
+    if not isinstance(generator, str) or not generator:
+        raise RuntimeError('Missing SIP generator version in frozen runtime information')
+
+
 def check_bundle(directory):
     directory = Path(directory).resolve()
     gui = directory / ('convertall.exe' if sys.platform == 'win32' else 'convertall')
@@ -66,10 +78,7 @@ def check_bundle(directory):
         if version != f'ConvertAll {__version__} (Qt6)':
             raise RuntimeError(f'Wrong bundle version: {version}')
         runtime = json.loads(run(cli, '--runtime-info'))
-        expected = {'application': 'ConvertAll', 'version': __version__, 'binding': 'PyQt6',
-                    'pyqt_binding': '6.11.0', 'qt_runtime': '6.11.2', 'sip': '13.13.0'}
-        if not isinstance(runtime, dict) or any(runtime.get(key) != value for key, value in expected.items()):
-            raise RuntimeError(f'Wrong frozen Qt6 runtime: {runtime}; expected {expected}')
+        validate_runtime_info(runtime)
         translations = Path(runtime['qt_translations_path']).resolve()
         if not translations.is_relative_to(directory):
             raise RuntimeError(f'Qt6 translations escaped the bundle: {translations}')

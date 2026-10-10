@@ -66,6 +66,12 @@ def test_pyinstaller_recipe_has_no_machine_specific_path_or_removed_crypto_api()
         assert required in text
     assert 'C:\\git' not in text and 'cipher=' not in text
     assert 'upx=False' in text
+    # A frozen diagnostic must read real wheel metadata, not SIP_VERSION_STR.
+    assert "copy_metadata('PyQt6-sip')" in text
+    assert "'PyQt6_sip-13.13.0.dist-info'" in text
+    for path in (ROOT / 'win').glob('*.iss'):
+        recipe = path.read_text(encoding='utf-8')
+        assert 'PyQt6_sip-13.13.0.dist-info' in recipe
 
 
 @pytest.fixture

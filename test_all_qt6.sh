@@ -357,8 +357,10 @@ report = {'utc': datetime.now(timezone.utc).isoformat(), 'python': sys.version,
           'runner_sha256': hashlib.sha256((root / 'test_all_qt6.sh').read_bytes()).hexdigest()}
 try:
     from PyQt6.QtCore import PYQT_VERSION_STR, QLocale, qVersion
+    from PyQt6 import sip
     qt_locale = QLocale()
     report.update(pyqt_binding=PYQT_VERSION_STR, qt_runtime=qVersion(),
+                  sip_package=packages['PyQt6-sip'], sip_generator=sip.SIP_VERSION_STR,
                   qt_default_locale=qt_locale.name(),
                   qt_decimal_point=qt_locale.decimalPoint(),
                   qt_group_separator=qt_locale.groupSeparator())

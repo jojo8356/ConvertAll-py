@@ -92,6 +92,23 @@ def setupTranslator(app):
     builtins._ = translate if numTranslators else markNoTranslate
 
 
+def runtimeInfo():
+    """Report loaded Qt versions and distinguish SIP package/tool versions.
+
+    sip.SIP_VERSION_STR describes the SIP generator, not the PyQt6-sip
+    distribution version. Frozen builds must include its package metadata;
+    missing metadata is an error, never replaced by an assumed pin.
+    """
+    from importlib.metadata import version
+    from PyQt6 import sip
+    return {'application': __progname__, 'version': __version__,
+            'binding': 'PyQt6', 'pyqt_binding': PYQT_VERSION_STR,
+            'qt_runtime': qVersion(), 'sip_package': version('PyQt6-sip'),
+            'sip_generator': sip.SIP_VERSION_STR,
+            'qt_translations_path': QLibraryInfo.path(
+                QLibraryInfo.LibraryPath.TranslationsPath)}
+
+
 def main():
     guiSmokeTest = '--gui-smoke-test' in sys.argv[1:]
     if len(sys.argv) > 1:
@@ -124,13 +141,13 @@ def main():
                     return 2
                 app = QCoreApplication(sys.argv)
                 import json
-                from PyQt6 import sip
-                print(json.dumps({'application': __progname__, 'version': __version__,
-                                  'binding': 'PyQt6', 'pyqt_binding': PYQT_VERSION_STR,
-                                  'qt_runtime': qVersion(), 'sip': sip.SIP_VERSION_STR,
-                                  'qt_translations_path': QLibraryInfo.path(
-                                      QLibraryInfo.LibraryPath.TranslationsPath)},
-                                 ensure_ascii=False))
+                from importlib.metadata import PackageNotFoundError
+                try:
+                    info = runtimeInfo()
+                except PackageNotFoundError as error:
+                    print('Runtime information unavailable: {0}'.format(error), file=sys.stderr)
+                    return 1
+                print(json.dumps(info, ensure_ascii=False))
                 return 0
             if any(opt == '--gui-smoke-test' for opt, value in opts):
                 if args or len(opts) != 1:

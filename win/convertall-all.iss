@@ -45,6 +45,7 @@ Source: "convertall_dos.exe"; DestDir: "{app}"
 Source: "*.dll"; DestDir: "{app}"
 Source: "*.pyd"; DestDir: "{app}"
 Source: "PyQt6\*"; DestDir: "{app}\PyQt6"; Flags: recursesubdirs createallsubdirs
+Source: "PyQt6_sip-13.13.0.dist-info\*"; DestDir: "{app}\PyQt6_sip-13.13.0.dist-info"; Flags: recursesubdirs createallsubdirs
 Source: "data\*.dat"; DestDir: "{app}\data"
 Source: "doc\*.html"; DestDir: "{app}\doc"
 Source: "doc\LICENSE*"; DestDir: "{app}\doc"

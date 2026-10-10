@@ -3,6 +3,7 @@
 # Flat onedir layout is retained for resource loading and Inno Setup.
 from pathlib import Path
 import sys
+from PyInstaller.utils.hooks import copy_metadata
 
 source = Path(SPECPATH).resolve()
 root = source.parent
@@ -16,6 +17,10 @@ resources += [(str(path), 'source') for pattern in ('*.py', '*.pro', '*.spec')
               for path in source.glob(pattern)]
 resources += [(str(path), '.') for path in (root / 'win').iterdir()
               if path.is_file()]
+# --runtime-info reads the real distribution version, not SIP_VERSION_STR
+# (the generator version). Normalize the destination for the Inno recipes.
+resources += [(path, 'PyQt6_sip-13.13.0.dist-info')
+              for path, destination in copy_metadata('PyQt6-sip')]
 
 analysis = Analysis(
     [str(source / 'convertall.py')],

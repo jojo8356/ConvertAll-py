@@ -2,10 +2,14 @@
 
 ## État et références
 
-Le portage remplace l'application Qt5, pas seulement ses imports. **Son code
-n'a pas encore été exécuté/validé dans cette session : l'utilisateur lance
-les tests, installations et builds.** Aucun chiffre de QA Qt6 0.9.0 ni résultat
-DPI/GPU/Inno/macOS n'est annoncé. Voir [RELEASE_QT6_FR.md](RELEASE_QT6_FR.md).
+Le portage remplace l'application Qt5, pas seulement ses imports. **L'agent
+n'exécute pas les tests, installations ni builds : l'utilisateur les lance.**
+Premier retour utilisateur au SHA `6a51c01` : 4553 tests réussis, 9 échecs,
+0 erreurs/0 skips et couverture 90,46 %. Les échecs concernent l'import `QFont`
+manquant et la confusion version du générateur SIP/version du paquet PyQt6-sip.
+Ces correctifs doivent être revalidés sur leur nouveau SHA ; le bundle a été
+ignoré parce que la suite source échouait. Aucune certification DPI/GPU/Inno/
+macOS n'est annoncée. Voir [RELEASE_QT6_FR.md](RELEASE_QT6_FR.md).
 
 | Référence | Usage |
 |---|---|
@@ -69,8 +73,14 @@ La CLI garde un `QCoreApplication` et n'importe pas `QtGui`/`QtWidgets` pour
 les conversions/diagnostics. Les codes de sortie, données corrigées, locale
 numérique C, rejet des séparateurs de groupes et tests des conversions restent
 conservés. `--runtime-info` fournit les versions **réellement chargées** du
-binding, de Qt et de SIP, ainsi que le chemin des traductions Qt6, au format JSON
-et sans GUI. `--gui-smoke-test` contrôle la vraie fenêtre puis quitte sa boucle.
+binding et de Qt, ainsi que le chemin des traductions Qt6, au format JSON et
+sans GUI. Il distingue `sip_package` (version de la distribution **PyQt6-sip**,
+13.13.0 dans le profil) et `sip_generator` (valeur de `sip.SIP_VERSION_STR`,
+6.17.0 dans le premier retour Linux). Ces deux versions ne désignent pas la
+même chose : la version du générateur n'est pas la version du paquet épinglé.
+Le bundle conserve les métadonnées PyQt6-sip ; leur absence provoque une erreur
+de diagnostic, jamais une version supposée. `--gui-smoke-test` contrôle la
+vraie fenêtre puis quitte sa boucle.
 
 Le moteur `unitatom/unitdata/unitgroup`, les sept catalogues et les assertions
 numériques ne sont pas réécrits pour Qt6. Seules les API Qt des widgets bases/

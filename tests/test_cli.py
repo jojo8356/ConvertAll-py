@@ -100,7 +100,11 @@ def test_english_locales_do_not_emit_translation_warnings(locale):
     assert 'Warning' not in result.stdout + result.stderr
 
 
-def test_cli_never_imports_qt_widgets_or_qt_gui(tmp_path):
+@pytest.mark.parametrize('arguments,expected_output', [
+    (['-q', '1', 'in', 'cm'], '2.54'),
+    (['--runtime-info'], '"sip_package": "13.13.0"'),
+])
+def test_cli_never_imports_qt_widgets_or_qt_gui(tmp_path, arguments, expected_output):
     code = f'''
 import importlib.abc, sys
 sys.path.insert(0, {str(SCRIPT.parent)!r})
@@ -110,13 +114,13 @@ class RejectGui(importlib.abc.MetaPathFinder):
             raise RuntimeError('CLI attempted a GUI import: ' + fullname)
 sys.meta_path.insert(0, RejectGui())
 import convertall
-sys.argv = [{str(SCRIPT)!r}, '-q', '1', 'in', 'cm']
+sys.argv = [{str(SCRIPT)!r}] + {arguments!r}
 sys.exit(convertall.main())
 '''
     result = subprocess.run([sys.executable, '-c', code], capture_output=True,
                             text=True, timeout=20, cwd=tmp_path)
     assert result.returncode == 0, result.stderr
-    assert '2.54' in result.stdout
+    assert expected_output in result.stdout
 
 
 def test_real_main_qapplication_event_loop_and_gui_resources():
@@ -180,7 +184,11 @@ def test_runtime_info_is_actual_qt6_json_without_a_gui_or_preferences(isolated_e
     assert info['binding'] == 'PyQt6'
     assert info['pyqt_binding'] == '6.11.0'
     assert info['qt_runtime'] == '6.11.2'
-    assert info['sip'] == '13.13.0'
+    from importlib.metadata import version
+    from PyQt6 import sip
+    assert info['sip_package'] == version('PyQt6-sip') == '13.13.0'
+    assert info['sip_generator'] == sip.SIP_VERSION_STR
+    assert info['sip_generator']
     assert info['qt_translations_path']
     assert not list(isolated_environment.rglob('.convertall'))
     assert not list(isolated_environment.rglob('convertall.ini'))
@@ -191,3 +199,36 @@ def test_runtime_info_rejects_other_arguments(extra):
     result = run_cli('--runtime-info', *extra, env={'QT_QPA_PLATFORM': 'invalid-platform'})
     assert result.returncode == 2
     assert 'does not accept other arguments' in result.stderr
+
+
+def test_runtime_info_distinguishes_sip_distribution_from_generator(monkeypatch):
+    from importlib import metadata
+    from PyQt6 import sip
+    import convertall
+    version = metadata.version
+    monkeypatch.setattr(metadata, 'version',
+                        lambda name: '13.13.0' if name == 'PyQt6-sip' else version(name))
+    monkeypatch.setattr(sip, 'SIP_VERSION_STR', '6.17.0')
+    info = convertall.runtimeInfo()
+    assert info['sip_package'] == '13.13.0'
+    assert info['sip_generator'] == '6.17.0'
+
+
+def test_runtime_info_missing_metadata_is_a_clean_error(monkeypatch, capsys):
+    from importlib import metadata
+    import convertall
+    version = metadata.version
+    def missing(name):
+        if name == 'PyQt6-sip':
+            raise metadata.PackageNotFoundError(name)
+        return version(name)
+    monkeypatch.setattr(metadata, 'version', missing)
+    # This unit test does not construct another Qt application in the process.
+    monkeypatch.setattr(convertall, 'QCoreApplication', lambda args: None)
+    monkeypatch.setattr(sys, 'argv', ['convertall.py', '--runtime-info'])
+    assert convertall.main() == 1
+    output = capsys.readouterr()
+    assert output.out == ''
+    assert 'Runtime information unavailable' in output.err
+    assert 'PyQt6-sip' in output.err
+    assert 'Traceback' not in output.err

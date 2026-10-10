@@ -99,7 +99,9 @@ def main():
         return fail(f'Mixed Qt bindings: {name} is installed. Use a clean Qt6 venv.')
     try:
         from PyQt6.QtCore import PYQT_VERSION_STR, qVersion
-        report.update(pyqt_binding=PYQT_VERSION_STR, qt_runtime=qVersion())
+        from PyQt6 import sip
+        report.update(pyqt_binding=PYQT_VERSION_STR, qt_runtime=qVersion(),
+                      sip_package=installed['PyQt6-sip'], sip_generator=sip.SIP_VERSION_STR)
     except ImportError as error:
         return fail(f'Qt6 cannot be imported: {error}')
     if report['pyqt_binding'] != installed['PyQt6'] or report['qt_runtime'] != installed['PyQt6-Qt6']:
