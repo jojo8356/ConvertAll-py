@@ -4,6 +4,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import struct
 import tarfile
 import zipfile
@@ -288,7 +289,8 @@ def test_local_scratch_copy_is_verified(monkeypatch, tmp_path):
     source.write_bytes(b'pinned bytes')
     copy = release_qt6.local_scratch_copy(source, packages.sha256(source))
     assert copy.read_bytes() == source.read_bytes()
-    assert copy.stat().st_mode & 0o111
+    if os.name == 'posix':  # Windows has no execute bit to preserve
+        assert copy.stat().st_mode & 0o111
     with pytest.raises(ReleaseError, match='No verified local copy'):
         release_qt6.local_scratch_copy(source, 'f' * 64)
 
@@ -392,8 +394,11 @@ def test_appimage_extraction_failure_stays_explicit(monkeypatch, tmp_path):
         release_qt6.extract_appimage(image, tmp_path / 'out', required='AppRun',
                                      expected_sha256=packages.sha256(image))
     message = str(failure.value)
-    assert 'No squashfs payload at offset 64' in message
     assert 'move the clone to a local disk' in message
+    if shutil.which('unsquashfs'):
+        assert 'No squashfs payload at offset 64' in message
+    else:  # squashfs-tools is a documented requirement, not a dependency here
+        assert 'unsquashfs is not installed' in message
     assert packages.sha256(image) in message  # the bytes on disk are reported, not hidden
 
 
