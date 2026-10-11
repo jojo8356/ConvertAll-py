@@ -99,17 +99,26 @@ def test_glibc_baseline_comes_from_elf_requirements_not_platform(bundle):
         packages.glibc_requirement(bundle, lambda path: 'static binary')
 
 
-def test_deb_private_runtime_and_relocatable_launcher(bundle, tmp_path):
-    stage = packages.stage_deb(bundle, tmp_path / 'deb', ROOT, '0.9.0',
-                               'Test Maintainer <test@example.invalid>', '2.36')
+def test_deb_uses_system_dependencies_without_copying_a_frozen_runtime(tmp_path):
+    stage = packages.stage_deb(tmp_path / 'deb', ROOT, '0.9.1',
+                               'Test Maintainer <test@example.invalid>')
     control = (stage / 'DEBIAN/control').read_text(encoding='utf-8')
-    assert 'Package: convertall\nVersion: 0.9.0-1\nArchitecture: amd64\n' in control
-    assert 'libc6 (>= 2.36)' in control
-    assert 'Depends: ' in control and 'python3-pyqt6' not in control
-    assert 'Installed-Size: ' in control
+    assert 'Package: convertall\nVersion: 0.9.1-1\nArchitecture: all\n' in control
+    assert 'Depends: ' + ', '.join(packages.DEBIAN_DEPENDENCIES) in control
+    assert 'python3-pyqt6 (>= 6.4.2)' in control
+    assert 'libc6' not in control and 'Installed-Size: ' in control
     script = (stage / 'usr/bin/convertall').read_text(encoding='utf-8')
-    assert 'exec "$HERE/../lib/convertall/convertall" "$@"' in script
-    assert (stage / 'usr/lib/convertall/data/units.dat').read_bytes() == b'unit data'
+    assert 'exec /usr/bin/python3 -E -s "$HERE/../share/convertall/_debian_entry.py" "$@"' in script
+    app = stage / 'usr/share/convertall'
+    assert (app / 'convertall.py').read_bytes() == (ROOT / 'source/convertall.py').read_bytes()
+    assert (app / 'data/units.dat').read_bytes() == (ROOT / 'data/units.dat').read_bytes()
+    assert len(list((app / 'data').glob('*.dat'))) == 7
+    assert len(list((app / 'translations').glob('convertall_*.qm'))) == 6
+    assert not (stage / 'usr/lib/convertall').exists()
+    assert not (app / 'PyQt6').exists() and not (app / 'setup.py').exists()
+    assert not list(stage.rglob('*.so')) and not list(stage.rglob('*.dist-info'))
+    assert not list(stage.rglob('*.ts'))
+    packages.verify_thin_deb_payload(stage)
     assert (stage / 'usr/share/doc/convertall/LICENSE-GPL-3.0').is_file()
     assert (stage / 'usr/share/icons/hicolor/scalable/apps/convertall.svg').is_file()
 
@@ -117,7 +126,7 @@ def test_deb_private_runtime_and_relocatable_launcher(bundle, tmp_path):
 @pytest.mark.parametrize('maintainer', ['missing-email', 'Name <mail>\nDepends: bad', 'Name <mail>'])
 def test_deb_control_rejects_header_injection(maintainer):
     with pytest.raises(ReleaseError, match='Invalid Debian'):
-        packages.deb_control('0.9.0', maintainer, '2.36', 1)
+        packages.deb_control('0.9.1', maintainer, 1)
 
 
 def test_appdir_keeps_full_bundle_icon_and_argument_forwarding(bundle, tmp_path):
@@ -191,7 +200,8 @@ def test_release_requires_green_ci_of_exact_sha(field, value):
 def test_ci_requires_all_eight_tests_and_both_native_bundles():
     names = [f'Tests {os_name} / Python {version} / Qt6'
              for os_name in ('ubuntu-24.04', 'windows-2022') for version in ('3.11', '3.12', '3.13', '3.14')]
-    names += ['Bundle ubuntu-24.04 / Qt6', 'Bundle windows-2022 / Qt6']
+    names += ['Bundle ubuntu-24.04 / Qt6', 'Bundle windows-2022 / Qt6',
+              'Debian native Qt / bookworm', 'Debian native Qt / trixie']
     jobs = [{'name': name, 'status': 'completed', 'conclusion': 'success'} for name in names]
     release_qt6.validate_ci_jobs(jobs)
     jobs[-1]['conclusion'] = 'skipped'

@@ -145,55 +145,127 @@ def glibc_requirement(bundle, read_versions):
     return '.'.join(map(str, max(versions)))
 
 
-def deb_control(version, maintainer, glibc, installed_kib):
+DEBIAN_DEPENDENCIES = ('python3 (>= 3.11)', 'python3-pyqt6 (>= 6.4.2)',
+                       'python3-pyqt6.sip (>= 13.4.1)', 'qt6-translations-l10n (>= 6.4.2)')
+
+
+def deb_control(version, maintainer, installed_kib):
     if not re.fullmatch(r'\d+\.\d+\.\d+', version):
         raise ReleaseError('Invalid Debian application version')
     if (not re.fullmatch(r'[^<>\r\n]+ <[^<>\s@]+@[^<>\s@]+>', maintainer)
-            or not re.fullmatch(r'\d+(?:\.\d+)+', glibc)
             or not isinstance(installed_kib, int) or installed_kib < 1):
-        raise ReleaseError('Invalid Debian maintainer/GLIBC/size')
-    # Qt/Python are bundled. These are desktop/system libraries, not python3-pyqt6.
-    # A conservative Debian/Ubuntu dependency superset covers X11 and Wayland.
-    dependencies = [f'libc6 (>= {glibc})', 'libgcc-s1', 'libstdc++6',
-                    'libgl1', 'libegl1', 'libxkbcommon0', 'libxkbcommon-x11-0',
-                    'libdbus-1-3', 'libfontconfig1', 'libfreetype6', 'fonts-dejavu-core',
-                    'libx11-6', 'libx11-xcb1', 'libxext6', 'libxrender1', 'libxcb1',
-                    'libxcb-cursor0', 'libxcb-icccm4', 'libxcb-image0', 'libxcb-keysyms1',
-                    'libxcb-randr0', 'libxcb-render0', 'libxcb-render-util0',
-                    'libxcb-shape0', 'libxcb-shm0', 'libxcb-sync1', 'libxcb-xfixes0',
-                    'libxcb-xkb1', 'libwayland-client0', 'libwayland-cursor0', 'libwayland-egl1']
-    return (f'Package: convertall\nVersion: {version}-1\nArchitecture: amd64\n'
+        raise ReleaseError('Invalid Debian maintainer/size')
+    return (f'Package: convertall\nVersion: {version}-1\nArchitecture: all\n'
             f'Maintainer: {maintainer}\nSection: science\nPriority: optional\n'
-            f'Installed-Size: {installed_kib}\nDepends: {", ".join(dependencies)}\n'
+            f'Installed-Size: {installed_kib}\nDepends: {", ".join(DEBIAN_DEPENDENCIES)}\n'
             'Homepage: https://github.com/jojo8356/ConvertAll-py\n'
             'Description: flexible unit converter (Python/PyQt6 edition)\n'
             ' Combine arbitrary units, with translations, history and fractions.\n'
-            ' The Python and Qt6 runtimes are included in the private application directory.\n')
+            ' Python, PyQt6, SIP and Qt are supplied by Debian packages, not bundled.\n')
 
 
-def stage_deb(bundle, destination, root, version, maintainer, glibc):
+def deb_launcher():
+    # Fixed system interpreter; -E/-s prevent a wheel venv/PYTHONPATH/user site
+    # from falsely validating a package intended for Debian's shared runtime.
+    return ('#!/bin/sh\nset -eu\n'
+            'HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\n'
+            'exec /usr/bin/python3 -E -s "$HERE/../share/convertall/_debian_entry.py" "$@"\n')
+
+
+def deb_entry():
+    return ('from pathlib import Path\nimport sys\n'
+            'try:\n    import convertall\n'
+            'except ImportError as error:\n'
+            '    print("Debian dependencies unavailable: " + str(error) + "\\n"\n'
+            '          "Install with apt: python3-pyqt6 python3-pyqt6.sip qt6-translations-l10n", file=sys.stderr)\n'
+            '    sys.exit(1)\n'
+            'base = Path(__file__).resolve().parent\n'
+            'convertall.dataFilePath = str(base / "data")\n'
+            'convertall.iconPath = str(base / "icons")\n'
+            'convertall.helpFilePath = str(base.parent / "doc" / "convertall")\n'
+            'sys.exit(convertall.main())\n')
+
+
+def stage_deb(destination, root, version, maintainer):
+    """Architecture-independent source/data package, NEVER a frozen bundle."""
     destination, root = Path(destination), Path(root)
-    copy_bundle(bundle, destination / 'usr/lib/convertall')
-    write_file(destination / 'usr/bin/convertall', launcher(), executable=True)
+    if destination.exists():
+        raise ReleaseError('Use a fresh Debian staging directory')
+    app = destination / 'usr/share/convertall'
+    app.mkdir(parents=True)
+    for source in sorted((root / 'source').glob('*.py')):
+        if source.name != 'setup.py':
+            shutil.copyfile(source, app / source.name)
+    for directory, pattern in (('data', '*.dat'), ('icons', '*.png'),
+                               ('translations', 'convertall_*.qm')):
+        target = app / directory
+        target.mkdir()
+        for source in sorted((root / directory).glob(pattern)):
+            shutil.copyfile(source, target / source.name)
+    write_file(app / '_debian_entry.py', deb_entry())
+    write_file(destination / 'usr/bin/convertall', deb_launcher(), executable=True)
     write_file(destination / 'usr/share/applications/convertall.desktop', desktop_entry())
     icon = destination / 'usr/share/icons/hicolor/scalable/apps/convertall.svg'
     icon.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(root / 'icons/convertall-icon.svg', icon)
     doc = destination / 'usr/share/doc/convertall'
     doc.mkdir(parents=True)
-    for name in ('LICENSE', 'LICENSE-GPL-3.0', 'LICENCES_QT6_FR.md'):
-        shutil.copyfile(root / 'doc' / name, doc / name)
+    for pattern in ('README*.html', 'LICENSE*'):
+        for source in sorted((root / 'doc').glob(pattern)):
+            if source.is_file():
+                shutil.copyfile(source, doc / source.name)
     write_file(doc / 'copyright',
-               'ConvertAll: GPL-2.0-or-later; the PyQt6 binary combination is GPL-3.0.\n'
+               'ConvertAll: GPL-2.0-or-later; use with PyQt6 under GPLv3.\n'
                'Copyright notices and full terms: LICENSE and LICENSE-GPL-3.0.\n'
-               'Third-party notices: /usr/lib/convertall/doc/third-party/.\n'
-               'Corresponding application source accompanies this release.\n'
-               'Review third-party source/notice obligations before distribution.\n')
+               'Only application source and resources are distributed here.\n'
+               'Python, Qt, PyQt6 and SIP are dependencies managed by Debian.\n')
     installed_kib = max(1, (sum(p.stat().st_size for p in destination.rglob('*')
                                 if p.is_file()) + 1023) // 1024)
-    write_file(destination / 'DEBIAN/control', deb_control(version, maintainer, glibc, installed_kib))
+    write_file(destination / 'DEBIAN/control', deb_control(version, maintainer, installed_kib))
     normalize_permissions(destination)
+    verify_thin_deb_payload(destination)
     return destination
+
+
+def verify_thin_deb_payload(directory):
+    directory = Path(directory)
+    app = directory / 'usr/share/convertall'
+    if not (app / 'convertall.py').is_file() or not (app / '_debian_entry.py').is_file():
+        raise ReleaseError('Debian application sources missing')
+    for path in directory.rglob('*'):
+        if (path.name in ('PyQt6', '_internal', 'base_library.zip', 'third-party', 'setup.py')
+                or path.name.endswith(('.dist-info', '.egg-info'))
+                or path.suffix.lower() in ('.so', '.pyd', '.dll', '.pyc', '.exe', '.ts', '.spec')
+                or path.name.startswith(('libpython', 'libQt6', 'libqt6'))):
+            raise ReleaseError(f'Bundled runtime/build file in thin Debian package: {path}')
+        if path.is_file():
+            with path.open('rb') as stream:
+                if stream.read(4) == b'\x7fELF':
+                    raise ReleaseError(f'ELF binary in architecture-all Debian package: {path}')
+    if len(list((app / 'data').glob('*.dat'))) != 7:
+        raise ReleaseError('Debian package must preserve all seven unit catalogues')
+    if len(list((app / 'translations').glob('convertall_*.qm'))) != 6:
+        raise ReleaseError('Debian package must preserve all six application translations')
+
+
+def validate_debian_runtime(runtime, version):
+    """Native Debian profile; frozen builds keep their strict 6.11 pins."""
+    def at_least(value, minimum):
+        match = re.match(r'^(\d+(?:\.\d+)+)', str(value))
+        return bool(match and tuple(map(int, match[1].split('.'))) >= minimum)
+    if (not isinstance(runtime, dict) or runtime.get('application') != 'ConvertAll'
+            or runtime.get('version') != version or runtime.get('binding') != 'PyQt6'
+            or runtime.get('frozen') is not False
+            or not at_least(runtime.get('python_version'), (3, 11))
+            or not at_least(runtime.get('pyqt_binding'), (6, 4, 2))
+            or not at_least(runtime.get('qt_runtime'), (6, 4, 2))
+            or not at_least(runtime.get('sip_package'), (13, 4, 1))
+            or not isinstance(runtime.get('sip_generator'), str) or not runtime['sip_generator']):
+        raise ReleaseError('Unsupported Debian system Python/Qt runtime')
+    if not re.fullmatch(r'/usr/bin/python3(?:\.\d+)?', runtime.get('python_executable', '')):
+        raise ReleaseError('Debian package must use /usr/bin/python3, not the build venv')
+    if not runtime.get('pyqt_location', '').startswith('/usr/lib/python3/dist-packages/PyQt6/'):
+        raise ReleaseError('Debian package loaded PyQt6 outside Debian dist-packages')
 
 
 def stage_appdir(bundle, destination, root):

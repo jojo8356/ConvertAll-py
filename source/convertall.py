@@ -14,7 +14,7 @@
 """
 
 __progname__ = 'ConvertAll'
-__version__ = '0.9.0'
+__version__ = '0.9.1'
 __author__ = 'Doug Bell'
 
 dataFilePath = None    # modified by install script if required
@@ -29,6 +29,7 @@ import locale
 import getopt
 import signal
 import builtins
+from PyQt6 import QtCore
 from PyQt6.QtCore import (PYQT_VERSION_STR, QCoreApplication, QLibraryInfo,
                          QLocale, QTranslator, qVersion)
 
@@ -105,6 +106,10 @@ def runtimeInfo():
             'binding': 'PyQt6', 'pyqt_binding': PYQT_VERSION_STR,
             'qt_runtime': qVersion(), 'sip_package': version('PyQt6-sip'),
             'sip_generator': sip.SIP_VERSION_STR,
+            'python_executable': sys.executable,
+            'python_version': '.'.join(map(str, sys.version_info[:3])),
+            'pyqt_location': QtCore.__file__,
+            'frozen': bool(getattr(sys, 'frozen', False)),
             'qt_translations_path': QLibraryInfo.path(
                 QLibraryInfo.LibraryPath.TranslationsPath)}
 

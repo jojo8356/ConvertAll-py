@@ -86,6 +86,7 @@ def validate_ci_jobs(jobs):
                 for os_name in ('ubuntu-24.04', 'windows-2022')
                 for version in ('3.11', '3.12', '3.13', '3.14')}
     expected |= {f'Bundle {os_name} / Qt6' for os_name in ('ubuntu-24.04', 'windows-2022')}
+    expected |= {f'Debian native Qt / {suite}' for suite in ('bookworm', 'trixie')}
     passed = {job['name'] for job in jobs
               if job.get('status') == 'completed' and job.get('conclusion') == 'success'}
     if not expected.issubset(passed):
@@ -260,7 +261,9 @@ def build_release(args):
     tag = 'v' + version
     maintainer = maintainer_identity(args.maintainer)
     # Validate user-supplied headers before any long-running command.
-    packages.deb_control(version, maintainer, '2.28', 1)
+    packages.deb_control(version, maintainer, 1)
+    # The .deb must be tested with Debian's shared runtime, never the wheel venv.
+    command(['/usr/bin/python3', '-E', '-s', ROOT / 'tools/build_deb.py', '--probe-system'], quiet=True)
     lock = json.loads((ROOT / 'tools/appimage-lock.json').read_text(encoding='utf-8'))
     if lock.get('architecture') != 'x86_64':
         raise ReleaseError('AppImage tool architecture mismatch')
@@ -330,16 +333,15 @@ def build_release(args):
     packages.verify_payload(tar_extract / portable_name, base_report['bundle_sha256'])
     checks = {'portable': check_launch(tar_extract / portable_name / 'convertall', 'portable', work,
                                       environment, version, bundle=tar_extract / portable_name)}
-    deb_root = packages.stage_deb(bundle, work / 'deb-root', ROOT, version, maintainer, glibc)
-    command(['desktop-file-validate', deb_root / 'usr/share/applications/convertall.desktop'])
-    deb = assets / f'convertall_{version}-1_amd64.deb'
-    command(['dpkg-deb', '--root-owner-group', '--build', deb_root, deb], env=environment)
-    command(['dpkg-deb', '--info', deb])
-    deb_extract = work / 'deb-extracted'
-    command(['dpkg-deb', '--extract', deb, deb_extract])
-    packages.verify_payload(deb_extract / 'usr/lib/convertall', base_report['bundle_sha256'])
-    checks['deb'] = check_launch(deb_extract / 'usr/bin/convertall', 'deb', work, environment,
-                                 version, bundle=deb_extract / 'usr/lib/convertall')
+    command(['/usr/bin/python3', '-E', '-s', ROOT / 'tools/build_deb.py',
+             '--output-dir', assets, '--work-dir', work / 'native-deb',
+             '--maintainer', maintainer], env=environment)
+    deb = assets / f'convertall_{version}-1_all.deb'
+    checks['deb'] = json.loads((assets / 'native-deb-validation.json').read_text(encoding='utf-8'))
+    if (checks['deb'].get('status') != 'PASS' or checks['deb'].get('source_commit') != commit
+            or checks['deb'].get('bundled_runtime') is not False
+            or checks['deb'].get('package_sha256') != packages.sha256(deb)):
+        raise ReleaseError('Native Debian package did not pass for this exact SHA')
 
     print('\n[4/7] AppImage with checksum-pinned builder AND runtime (no FUSE for tests)', flush=True)
     tools = work / 'appimage-tools'
@@ -400,6 +402,8 @@ def build_release(args):
                 'build_host': platform.platform(), 'build_os_release': os_release,
                 'build_python': sys.version, 'source_tests': tests, 'package_checks': checks,
                 'appimage_lock': lock, 'wheel_notices': notices,
+                'debian_profile': {'architecture': 'all', 'bundled_runtime': False,
+                                   'depends': list(packages.DEBIAN_DEPENDENCIES)},
                 'manual_acceptance': 'NOT CERTIFIED: real desktop/DPI/GPU, apt install/remove, Windows, licences',
                 'assets': {path.name: {'sha256': packages.sha256(path), 'bytes': path.stat().st_size}
                            for path in sorted(assets.iterdir()) if path.is_file()}}
@@ -412,13 +416,15 @@ def build_release(args):
              'CI: Ubuntu/Windows × Python 3.11–3.14 and both native bundles passed.\n\n'
              '## Downloads\n'
              f'- `{tarball.name}`: Linux executable AND all private Qt/Python resources.\n'
-             f'- `{deb.name}`: Debian/Ubuntu amd64 package; Python/PyQt need not be installed.\n'
+             f'- `{deb.name}`: small Debian architecture-all package; Python/PyQt6/Qt supplied by apt Depends.\n'
              f'- `{image.name}`: Linux x86_64 AppImage; `chmod +x` before running.\n'
              f'- `{windows_zip.name}`: extract the WHOLE directory, then run `convertall.exe`.\n'
              f'- `ConvertAll-{version}-qt6-source.tar.gz`: exact CI application source.\n\n'
-             f'Linux minimum ELF GLIBC requirement detected: **{glibc}**. '
+             f'Portable/AppImage minimum ELF GLIBC requirement detected: **{glibc}**. '
+             'This does not apply to the source-only .deb: apt manages its shared runtime.\n'
              'Desktop/graphics system libraries are still required; not universal Linux compatibility.\n'
-             'Portable/.deb/AppImage runtime, conversions, 7 catalogues and offscreen GUI passed locally.\n'
+             'Portable/AppImage and native Debian runtime, conversions, 7 catalogues and offscreen GUI passed locally.\n'
+             'Debian native Qt regressions/package checks passed in Bookworm and Trixie CI.\n'
              'SHA256SUMS and JSON reports bind these assets to the source/CI/build host.\n\n'
              '## Review before publishing\n'
              'Real desktop/DPI/GPU and apt install/upgrade/remove still require manual acceptance.\n'

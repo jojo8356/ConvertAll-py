@@ -1,14 +1,15 @@
-# ConvertAll-py — Qt6 0.9.0
+# ConvertAll-py — Qt6 0.9.1
 
 ConvertAll permet de combiner librement les unités : pouces par décennie,
 mètres-livres, milles nautiques au cube… Ce dépôt maintient l'application
 **Python / PyQt6**, distincte de l'application Flutter actuelle de l'amont.
 
-**État : QA sources/bundles Qt6 verte au SHA `a72ee1d`** (4575 tests,
-90,70 % sur Linux et CI Ubuntu/Windows Python 3.11–3.14). Les nouvelles
-recettes Debian/AppImage restent à exécuter/valider au nouveau SHA ; elles
-ne certifient pas bureau réel/DPI/GPU. Qt5 0.8.1 reste une référence séparée
-et immuable au commit `b10b8e7837e30a2ec9a957a9a2519e4ac0334db3`.
+**État : 0.9.1 candidate, `.deb` natif léger à revalider.** Le tag Qt6
+`v0.9.0` reste au SHA `a3b93db` ; ses résultats ne valident pas ce nouveau
+commit. La CI ajoute Debian Bookworm/Trixie avec Qt/PyQt6 fournis par APT,
+sans remplacer les huit jobs du profil épinglé et les deux bundles.
+Aucune certification bureau réel/DPI/GPU n'est revendiquée. Qt5 0.8.1 reste
+immuable au commit `b10b8e7837e30a2ec9a957a9a2519e4ac0334db3`.
 
 ## Lancer les sources
 
@@ -69,10 +70,14 @@ bash release_qt6.sh --wait-ci --draft
 ```
 
 Le script impose la CI du SHA actuel, reteste les sources, construit/contrôle
-localement archive portable, `.deb` et AppImage, récupère les `.exe` Windows
-avec leur dossier complet depuis la même CI et vérifie les sources/checksums.
-Il crée un **brouillon non publié**, jamais Latest. Sans `--draft`, seuls les
-assets locaux sont préparés. Aucun pip/sudo/apt n'est exécuté par ce script.
+portable et AppImage autonomes, puis un **`.deb` contenant seulement les sources
+et ressources**. Ce dernier déclare Python/PyQt6/Qt via `Depends` APT (minimum
+Python 3.11, PyQt6/Qt 6.4.2), sans runtime embarqué ; il est contrôlé avec
+`/usr/bin/python3` hors du venv de build. Les `.exe` Windows complets et sources
+viennent de la même CI. Le profil autonome 6.11 reste inchangé.
+Il crée un **brouillon 0.9.1 non publié**, jamais Latest ; `v0.9.0` n'est pas
+modifié. Sans `--draft`, seuls les assets locaux sont préparés. Aucun
+pip/sudo/apt n'est exécuté par ce script.
 Voir [la procédure complète et les limites](doc/RELEASE_LINUX_FR.md).
 
 ## Diagnostics et publication
@@ -86,7 +91,8 @@ QT_QPA_PLATFORM=offscreen python source/convertall.py --gui-smoke-test
 
 - [Portage et compatibilité Qt6](doc/PORTAGE_QT6_FR.md)
 - [Validation et commandes de release Qt6](doc/RELEASE_QT6_FR.md)
-- [Notes 0.9.0, validation en attente](doc/RELEASE_NOTES_0.9.0.md)
+- [Notes 0.9.1, paquet Debian léger à valider](doc/RELEASE_NOTES_0.9.1.md)
+- [Historique Qt6 0.9.0](doc/RELEASE_NOTES_0.9.0.md)
 - [Licences et redistribution](doc/LICENCES_QT6_FR.md)
 - [Audit/benchmark **historique 0.8.0**](doc/MIGRATION_QT6_FR.md)
 - [Procédure **historique Qt5 0.8.1**](doc/RELEASE_QT5_FR.md)
@@ -95,4 +101,4 @@ Le workflow Qt5 est manuel et extrait son SHA historique : il ne teste jamais
 ces sources Qt6 avec PyQt5. `test_all_qt5.sh` refuse ce nouvel arbre ; utiliser
 l'archive du commit Qt5 pour reproduire ses tests. Ne pas retargeter `v0.8.1`.
 La CI ne publie rien automatiquement. Offscreen n'est pas une certification
-d'un bureau réel et le benchmark 0.8.0 n'est pas une mesure de cette 0.9.0.
+d'un bureau réel et le benchmark 0.8.0 n'est pas une mesure de cette 0.9.1.

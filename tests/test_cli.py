@@ -61,7 +61,7 @@ def test_version_does_not_start_gui_or_load_catalogues():
     # Even a deliberately invalid GUI platform must not affect a CLI command.
     result = run_cli('--version', env={'QT_QPA_PLATFORM': 'invalid-platform'})
     assert result.returncode == 0
-    assert result.stdout.strip() == 'ConvertAll 0.9.0 (Qt6)'
+    assert result.stdout.strip() == 'ConvertAll 0.9.1 (Qt6)'
 
 
 @pytest.mark.parametrize('flag', ['-t', '--test'])
@@ -102,7 +102,8 @@ def test_english_locales_do_not_emit_translation_warnings(locale):
 
 @pytest.mark.parametrize('arguments,expected_output', [
     (['-q', '1', 'in', 'cm'], '2.54'),
-    (['--runtime-info'], '"sip_package": "13.13.0"'),
+    pytest.param(['--runtime-info'], '"sip_package": "13.13.0"',
+                 marks=pytest.mark.pinned_qt_profile),
 ])
 def test_cli_never_imports_qt_widgets_or_qt_gui(tmp_path, arguments, expected_output):
     code = f'''
@@ -174,13 +175,14 @@ def test_diagnostics_do_not_create_a_user_preferences_file(isolated_environment)
     assert not list(isolated_environment.rglob('convertall.ini'))
 
 
+@pytest.mark.pinned_qt_profile
 def test_runtime_info_is_actual_qt6_json_without_a_gui_or_preferences(isolated_environment):
     import json
     result = run_cli('--runtime-info', env={'QT_QPA_PLATFORM': 'invalid-platform'})
     assert result.returncode == 0, result.stderr
     info = json.loads(result.stdout)
     assert info['application'] == 'ConvertAll'
-    assert info['version'] == '0.9.0'
+    assert info['version'] == '0.9.1'
     assert info['binding'] == 'PyQt6'
     assert info['pyqt_binding'] == '6.11.0'
     assert info['qt_runtime'] == '6.11.2'

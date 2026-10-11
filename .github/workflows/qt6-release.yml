@@ -59,6 +59,45 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+  native-deb:
+    name: Debian native Qt / ${{ matrix.suite }}
+    runs-on: ubuntu-24.04
+    container: debian:${{ matrix.suite }}-slim
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [bookworm, trixie]
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QT_API: pyqt6
+    steps:
+      - name: Native Debian dependencies, not PyQt wheels
+        run: |
+          apt-get update
+          apt-get install -y git ca-certificates python3 python3-venv python3-pyqt6 python3-pyqt6.sip qt6-translations-l10n fonts-dejavu-core desktop-file-utils
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test helpers only (system Qt remains supplied by apt)
+        run: |
+          /usr/bin/python3 -m venv --system-site-packages .venv/debian-tests
+          .venv/debian-tests/bin/python -m pip install -r requirements-test-debian.txt
+      - name: Application regressions on distribution Qt (coverage gate unchanged)
+        run: |
+          .venv/debian-tests/bin/python -m pytest -q -m 'not pinned_qt_profile' tests/test_bases.py tests/test_catalogues.py tests/test_engine.py tests/test_gui.py tests/test_qt6_migration.py tests/test_resources.py tests/test_options.py tests/test_option_locale.py tests/test_cli.py tests/test_cli_validator.py --cov=source --cov-branch --cov-report=xml:build/native-debian/coverage.xml --cov-report=json:build/native-debian/coverage.json --junitxml=build/native-debian/junit.xml
+      - name: Build and execute the thin .deb with system Python outside the test venv
+        run: |
+          /usr/bin/python3 -E -s tools/build_deb.py --output-dir build/native-debian --maintainer 'ConvertAll-py CI <jojo8356@users.noreply.github.com>'
+      - name: Save distribution runtime/package/coverage reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: qt6-native-deb-${{ matrix.suite }}
+          path: build/native-debian/
+          retention-days: 14
+          if-no-files-found: error
+
   bundle:
     name: Bundle ${{ matrix.os }} / Qt6
     needs: tests

@@ -34,7 +34,7 @@ def input_hashes():
                   and '__pycache__' not in p.parts and p.suffix != '.pyc']
     paths += [ROOT / name for name in ('install.py', 'uninstall.py', 'README.md',
                                       'requirements-qt5.txt', 'requirements-qt6.txt',
-                                      'requirements-test.txt', 'requirements-build.txt',
+                                      'requirements-test.txt', 'requirements-build.txt', 'requirements-test-debian.txt',
                                       'pytest.ini', '.coveragerc', '.gitignore',
                                       '.gitattributes', 'convertall.desktop',
                                       'test_all_qt5.sh', 'test_all_qt6.sh', 'release_qt6.sh')]

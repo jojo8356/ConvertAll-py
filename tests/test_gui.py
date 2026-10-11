@@ -143,7 +143,7 @@ def test_about_reports_correct_version(window, monkeypatch):
     messages = []
     monkeypatch.setattr(QMessageBox, 'about', lambda *args: messages.append(args[2]))
     window.about()
-    assert '0.9.0' in messages[0] and 'Doug Bell' in messages[0]
+    assert '0.9.1' in messages[0] and 'Doug Bell' in messages[0]
 
 
 def test_close_saves_geometry_history_and_reopens(window, enter_units, qtbot):

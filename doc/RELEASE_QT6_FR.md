@@ -1,4 +1,4 @@
-# ConvertAll 0.9.0 / Qt6 — validation et release
+# ConvertAll 0.9.1 / Qt6 — validation et release
 
 **Code candidat, pas certification.** Aucun test, installation ni build Qt6
 n'a été exécuté par l'agent pour ce portage ; l'utilisateur les exécute.
@@ -43,6 +43,17 @@ Qt5 0.8.1 reste au SHA `b10b8e7837e30a2ec9a957a9a2519e4ac0334db3`.
 Ne pas modifier `v0.8.1` ni fabriquer ses assets depuis les sources Qt6.
 Le workflow Qt5 manuel extrait ce commit. Le nouveau workflow Qt6 teste le
 nouveau commit avec le nouveau profil, sans publication automatique.
+
+## Paquet Debian 0.9.1 sans runtime embarqué
+
+La 0.9.0 au SHA `a3b93db8aed87787c531c6067c43199e4d48159a` a atteint la
+création du draft utilisateur, avec archive portable, ancien `.deb` autonome,
+AppImage et ZIP Windows. Son tag est immuable ; publication utilisateur non
+confirmée ici. La 0.9.1 change le `.deb` : code/ressources uniquement,
+`Architecture: all`, dépendances Python/PyQt6/Qt/SIP résolues par APT.
+Voir [RELEASE_LINUX_FR.md](RELEASE_LINUX_FR.md). Les nouveaux profils Debian
+Bookworm/Trixie sont distincts des pins des bundles, et doivent être validés
+au nouveau SHA ; aucun résultat 0.9.0 ne leur est attribué.
 
 ## 1. Mise à jour puis un seul lancement
 
@@ -104,7 +115,9 @@ Codes de sortie : 0 = étapes demandées réussies, 1 = échec, 2 = prérequis a
 
 La CI `.github/workflows/qt6-release.yml` comporte huit jobs tests
 (Ubuntu 24.04 et Windows 2022 × Python 3.11/3.12/3.13/3.14), puis deux jobs
-bundles Python 3.11 qui dépendent de **toute** la matrice.
+bundles Python 3.11 qui dépendent de **toute** la matrice. Deux jobs
+natifs Debian Bookworm/Trixie s’ajoutent pour tester le `.deb` léger sur Qt
+distribution. Le lanceur release exige la réussite des douze jobs.
 
 Le gate refuse profils non épinglés, autres bindings installés, runtime chargé
 différent des roues, SHA CI différent de `GITHUB_SHA`, changement de commit
@@ -170,8 +183,8 @@ pas en Latest. Il crée un draft contenant les trois assets source de la CI.
 set -euo pipefail
 REPO='jojo8356/ConvertAll-py'
 BRANCH='arena/0adacf84-convertall-py'
-TAG='v0.9.0'
-ASSET='ConvertAll-0.9.0-qt6-source.tar.gz'
+TAG='v0.9.1'
+ASSET='ConvertAll-0.9.1-qt6-source.tar.gz'
 test "$(git branch --show-current)" = "$BRANCH"
 test -z "$(git status --porcelain)"
 SHA=$(git rev-parse HEAD)
@@ -203,7 +216,7 @@ folder, name, sha = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
 archive = folder / name
 metadata = json.loads(archive.with_name(name + '.provenance.json').read_text(encoding='utf-8'))
 assert metadata['source_commit'] == sha, metadata
-assert metadata['version'] == '0.9.0' and metadata['binding'] == 'Qt6', metadata
+assert metadata['version'] == '0.9.1' and metadata['binding'] == 'Qt6', metadata
 digest = hashlib.sha256(archive.read_bytes()).hexdigest()
 assert digest == metadata['sha256'], metadata
 assert archive.with_name(name + '.sha256').read_text(encoding='ascii').strip() == f'{digest}  {name}'
@@ -222,7 +235,7 @@ else
   gh api --method POST "repos/$REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$SHA"
 fi
 gh release create "$TAG" --repo "$REPO" --verify-tag --draft \
-  --title 'ConvertAll 0.9.0 — Qt6' --notes-file doc/RELEASE_NOTES_0.9.0.md \
+  --title 'ConvertAll 0.9.1 — Qt6' --notes-file doc/RELEASE_NOTES_0.9.1.md \
   "$ASSETS_DIR/$ASSET" "$ASSETS_DIR/$ASSET.sha256" "$ASSETS_DIR/$ASSET.provenance.json"
 ```
 
@@ -250,7 +263,7 @@ Ce bloc est lui aussi autonome, sans variables héritées du bloc précédent :
 ```bash
 set -euo pipefail
 REPO='jojo8356/ConvertAll-py'
-TAG='v0.9.0'
+TAG='v0.9.1'
 gh release view "$TAG" --repo "$REPO"
 gh release edit "$TAG" --repo "$REPO" --draft=false --prerelease=false --latest
 ```
