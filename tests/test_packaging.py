@@ -19,7 +19,7 @@ pytestmark = pytest.mark.packaging
 
 def test_versions_are_consistent_without_rewriting_history():
     version = convertall.__version__
-    assert version == '0.9.0'
+    assert version == '0.9.1'
     assert release_source.version_from_source((ROOT / 'source/convertall.py').read_text(encoding='utf-8')) == version
     for path in (ROOT / 'win').glob('*.iss'):
         text = path.read_text(encoding='utf-8')
@@ -102,7 +102,7 @@ def test_archive_reproducible_checksum_commit_and_extracted_cli(committed_copy, 
     extracted = tmp_path / 'extracted'
     with tarfile.open(first[0], 'r:gz') as archive:
         paths = [member.name for member in archive.getmembers()]
-        prefix = 'ConvertAll-0.9.0-qt6-source/'
+        prefix = 'ConvertAll-0.9.1-qt6-source/'
         for relative in ('source/convertall.py', 'data/units.dat', 'translations/convertall_fr.qm',
                          'install.py', 'doc/LICENSE', 'icons/convertall_med.png',
                          'requirements-test.txt', 'pytest.ini', '.coveragerc',
@@ -120,7 +120,7 @@ def test_archive_reproducible_checksum_commit_and_extracted_cli(committed_copy, 
                    and '..' not in Path(path).parts for path in paths)
         filters = {'filter': 'data'} if hasattr(tarfile, 'data_filter') else {}
         archive.extractall(extracted, **filters)
-    script = extracted / 'ConvertAll-0.9.0-qt6-source/source/convertall.py'
+    script = extracted / 'ConvertAll-0.9.1-qt6-source/source/convertall.py'
     result = run_cli('-q', '1', 'in', 'cm', script=script, cwd=tmp_path)
     assert result.returncode == 0 and result.stdout.strip() == '1 in = 2.54 cm'
     assert run_cli('--test-all', script=script, cwd=tmp_path).returncode == 0
