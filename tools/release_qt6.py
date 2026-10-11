@@ -173,58 +173,171 @@ def require_amd64_elf(path):
         raise ReleaseError(f'Expected an x86_64 ELF executable: {path}')
 
 
-def retry_directories():
-    """Local scratch directories used when the work tree cannot self-parse."""
+def appimage_payload_offset(path):
+    """Offset at which a type 2 runtime expects the squashfs payload.
+
+    The runtime computes it as the end of the ELF, that is the later of the end
+    of the section header table and the end of the last section, so any
+    fallback extractor applies the same rule. The squashfs magic is verified
+    here, which also reports what a failing filesystem serves at that offset.
+    """
+    with Path(path).open('rb') as stream:
+        header = stream.read(64)
+        if len(header) < 64 or header[:4] != b'\x7fELF':
+            raise ReleaseError(f'Not an ELF AppImage runtime: {path}')
+        if header[4:6] != b'\x02\x01':
+            raise ReleaseError(f'Unsupported AppImage runtime class in {path}')
+        section_offset = struct.unpack_from('<Q', header, 40)[0]
+        entry_size = struct.unpack_from('<H', header, 58)[0]
+        section_count = struct.unpack_from('<H', header, 60)[0]
+        if not (section_offset and entry_size and section_count):
+            raise ReleaseError(f'No ELF section table in {path}')
+        stream.seek(section_offset + entry_size * (section_count - 1))
+        entry = stream.read(entry_size)
+        if len(entry) < 64:
+            raise ReleaseError(f'Truncated ELF section table in {path}')
+        table_end = section_offset + entry_size * section_count
+        last_section_end = (struct.unpack_from('<Q', entry, 24)[0]
+                            + struct.unpack_from('<Q', entry, 32)[0])
+        offset = max(table_end, last_section_end)
+        stream.seek(offset)
+        magic = stream.read(4)
+    if magic != b'hsqs':
+        raise ReleaseError(f'No squashfs payload at offset {offset} of {path}: '
+                           f'reads returned {magic!r}')
+    return offset
+
+
+def local_scratch_directories():
+    """Private temporary directories on a local disk (TMPDIR, then tmpfs)."""
     candidates = [{}]
-    shm = Path('/dev/shm')
-    if shm.is_dir() and os.access(shm, os.W_OK):
-        candidates.append({'dir': shm})
+    shared_memory = Path('/dev/shm')
+    if shared_memory.is_dir() and os.access(shared_memory, os.W_OK):
+        candidates.append({'dir': shared_memory})
     directories = []
-    for extra in candidates:
+    for arguments in candidates:
         try:
-            path = Path(tempfile.mkdtemp(prefix='convertall-appimage-', **extra))
+            directory = Path(tempfile.mkdtemp(prefix='convertall-appimage-', **arguments))
         except OSError:
             continue
-        if path not in directories:
-            directories.append(path)
+        if directory not in directories:
+            directories.append(directory)
     return directories
 
 
-def extract_appimage(image, destination, *, required, expected_sha256=None):
-    """Extract an AppImage without FUSE, retrying from a local disk if needed.
+def local_scratch_copy(path, expected_sha256=None):
+    """Byte-identical private copy of an artifact, verified before it is used."""
+    source = Path(path)
+    if expected_sha256 is None:
+        expected_sha256 = packages.sha256(source)
+    errors = []
+    for directory in local_scratch_directories():
+        target = directory / source.name
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+            if packages.sha256(target) != expected_sha256:
+                raise ReleaseError('copy does not match the source checksum')
+            target.chmod(0o755)
+            return target
+        except (OSError, ReleaseError) as error:
+            errors.append(f'{directory}: {error}')
+    raise ReleaseError(f'No verified local copy of {source} could be made '
+                       f'({"; ".join(errors)})')
+
+
+def extract_squashfs_payload(image, destination, *, required, offset, expected_sha256=None):
+    """Read the squashfs payload without running the AppImage runtime.
+
+    Reading the payload ourselves keeps the checksum-pinned bytes as the only
+    source of truth when the runtime cannot locate its own filesystem image.
+    squashfs-tools is already a documented host requirement for mksquashfs.
+    """
+    verified = local_scratch_copy(image, expected_sha256)
+    payload = verified.parent / 'payload.squashfs'
+    with verified.open('rb') as stream, payload.open('wb') as stripped:
+        stream.seek(offset)
+        shutil.copyfileobj(stream, stripped)
+    root = Path(destination) / 'squashfs-root'
+    if root.is_dir():
+        shutil.rmtree(root)
+    root.parent.mkdir(parents=True, exist_ok=True)
+    command(['unsquashfs', '-d', root, payload], quiet=True)
+    if (root / required).exists():
+        return root
+    raise ReleaseError(f'no {required} after extracting the payload at offset {offset}')
+
+
+def extract_appimage(image, destination, *, required, expected_sha256=None, runtime=None):
+    """Extract an AppImage without FUSE, whatever the work tree filesystem does.
 
     `--appimage-extract` needs no FUSE, but the embedded runtime locates its own
-    squashfs by reading the file it was started from. That lookup can fail when
-    the work tree sits on a shared, synchronised or otherwise exotic mount, so
-    the image is copied to a private temporary directory (TMPDIR, then tmpfs)
-    and retried there before the release gives up. Copies are re-verified.
+    payload by reading `/proc/self/exe` at the offset it computes from the ELF
+    section table, and that lookup fails on some synchronised or otherwise
+    exotic mounts ("Failed to open squashfs image"). The pinned bytes are then
+    retried from a verified copy on a local disk, through the pinned standalone
+    runtime with TARGET_APPIMAGE (which reads the image by path instead of
+    /proc/self/exe), and finally by reading the squashfs payload directly.
+    No step substitutes another binary, and nothing is skipped: every attempt
+    works on the very bytes that the checksum pins describe.
     """
     image, destination = Path(image), Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
-    attempts = [(destination, image)]
-    attempts.extend((retry / 'image', retry / image.name) for retry in retry_directories())
+    scratch_directories = local_scratch_directories()
     errors = []
-    for where, source in attempts:
+
+    def extract_with(program, cwd, env=None):
+        command([program, '--appimage-extract'], cwd=cwd, env=env, quiet=True)
+        root = Path(cwd) / 'squashfs-root'
+        if (root / required).exists():
+            return root
+        errors.append(f'no {required} in {root}')
+        return None
+
+    def attempt(label, program, cwd, env=None):
         try:
-            if source != image:
-                where.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(image, source)
-                source.chmod(0o755)
-                if expected_sha256 is not None and packages.sha256(source) != expected_sha256:
-                    raise ReleaseError('temporary AppImage copy checksum mismatch')
-            command([source, '--appimage-extract'], cwd=where, quiet=True)
-            root = where / 'squashfs-root'
-            if (root / required).exists():
-                return root
-            errors.append(f'no {required} after extraction in {where}')
+            return extract_with(program, cwd, env)
         except ReleaseError as error:
-            errors.append(str(error))
-            if source == image:
-                print(f'Extraction in {where} failed; retrying outside the work tree...',
-                      flush=True)
-    raise ReleaseError('AppImage could not be extracted: ' + '; '.join(errors)
-                       + '\nRun the release from a local filesystem (not a shared or '
-                         'synchronised folder); checksum pins stay enforced.')
+            errors.append(f'{label}: {error}')
+            return None
+
+    root = attempt(f'{image} in place', image, destination)
+    if root is not None:
+        return root
+    for scratch in scratch_directories:
+        print(f'WARNING: {" | ".join(errors)}; retrying from {scratch}...', flush=True)
+        root = attempt('local copy', local_scratch_copy(image, expected_sha256), scratch)
+        if root is not None:
+            return root
+    if runtime is not None and Path(runtime).is_file() and scratch_directories:
+        # TARGET_APPIMAGE makes the runtime operate on a given file, so its own
+        # /proc/self/exe lookup is not involved at all.
+        print(f'WARNING: {" | ".join(errors)}; retrying through the pinned runtime...', flush=True)
+        root = attempt('pinned runtime', runtime, scratch_directories[0],
+                       {**os.environ, 'TARGET_APPIMAGE': str(image)})
+        if root is not None:
+            return root
+    if shutil.which('unsquashfs'):
+        try:
+            offset = appimage_payload_offset(image)
+            print(f'WARNING: {" | ".join(errors)}; reading the payload at offset {offset}...',
+                  flush=True)
+            return extract_squashfs_payload(image, destination, required=required, offset=offset,
+                                            expected_sha256=expected_sha256)
+        except ReleaseError as error:
+            errors.append(f'direct payload read: {error}')
+    else:
+        errors.append('unsquashfs is not installed (install squashfs-tools)')
+    try:
+        state = f'{image.stat().st_size} bytes, sha256 now {packages.sha256(image)}'
+    except OSError as error:
+        state = f'cannot be read back ({error})'
+    raise ReleaseError('AppImage could not be extracted: ' + ' | '.join(errors)
+                       + f'\n{image}: {state}'
+                       + (f' (pinned {expected_sha256})' if expected_sha256 else '')
+                       + '\nIf that checksum does not match the pin, or if the work tree lives on a '
+                         'shared, synchronised or cloud folder, move the clone to a local disk. '
+                         'Checksum pins stay enforced; no unverified tool is ever used.')
 
 
 def maintainer_identity(provided):
@@ -404,18 +517,28 @@ def build_release(args):
     tool_image = fetch_tool(lock['appimagetool'], tools)
     runtime = fetch_tool(lock['runtime'], tools)
     tool = extract_appimage(tool_image, tools / 'extracted', required='AppRun',
-                            expected_sha256=lock['appimagetool']['sha256']) / 'AppRun'
+                            expected_sha256=lock['appimagetool']['sha256'],
+                            runtime=runtime) / 'AppRun'
     appdir = packages.stage_appdir(bundle, work / 'ConvertAll.AppDir', ROOT)
     command(['desktop-file-validate', appdir / 'convertall.desktop'])
     image = assets / f'ConvertAll-{version}-x86_64.AppImage'
     command(appimage_command(tool, runtime, appdir, image, lock['compression']),
             env={**environment, 'ARCH': 'x86_64', 'VERSION': version})
     image.chmod(0o755)
-    # First exercise the actual AppImage runtime, not just the uncompressed AppDir.
-    checks['appimage_runtime'] = check_launch(image, 'appimage-runtime', work, environment,
-                                             version, prefix=('--appimage-extract-and-run',))
+    # First exercise the actual AppImage runtime, not just the uncompressed AppDir:
+    # the runtime reads its own payload through /proc/self/exe, so a work tree on a
+    # synchronised mount is retried from a byte-identical copy on a local disk.
+    try:
+        checks['appimage_runtime'] = check_launch(image, 'appimage-runtime', work, environment,
+                                                  version, prefix=('--appimage-extract-and-run',))
+    except ReleaseError as error:
+        print(f'WARNING: {error}\nWARNING: retrying the AppImage runtime check from a local '
+              'copy...', flush=True)
+        checks['appimage_runtime'] = check_launch(local_scratch_copy(image),
+                                                  'appimage-runtime-local', work, environment,
+                                                  version, prefix=('--appimage-extract-and-run',))
     extracted_app = extract_appimage(image, work / 'appimage-extracted',
-                                     required='usr/lib/convertall')
+                                     required='usr/lib/convertall', runtime=runtime)
     packages.verify_payload(extracted_app / 'usr/lib/convertall', base_report['bundle_sha256'])
     checks['appimage_apprun'] = check_launch(extracted_app / 'AppRun', 'appimage-apprun', work,
                                             environment, version, bundle=extracted_app / 'usr/lib/convertall')

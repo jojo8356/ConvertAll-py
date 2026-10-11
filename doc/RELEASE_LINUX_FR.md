@@ -133,6 +133,18 @@ Le runtime [type2-runtime](https://github.com/AppImage/type2-runtime) choisi
 est statique (musl/libfuse) ; la QA emploie extraction/exécution sans FUSE.
 Le montage FUSE réel et la compatibilité GPU restent à accepter sur le poste.
 
+L'auto-extraction lit `/proc/self/exe` à l'offset calculé depuis la table des
+sections ELF : certains montages (dossiers synchronisés ou nuagiques, clone
+rangé dans « Téléchargements ») renvoient alors d'autres octets et l'extraction
+échoue en « Failed to open squashfs image ». Dans ce cas le script affiche un
+`WARNING` puis retente, sans jamais changer de binaire : copie vérifiée sur
+disque local (`TMPDIR`, puis `/dev/shm`), puis runtime épinglé via
+`TARGET_APPIMAGE` (lecture par chemin), puis lecture directe du payload avec
+`unsquashfs` (`squashfs-tools` est déjà requis). Le repli n'est pas un
+contournement : seuls les octets décrits par les pins sont exécutés, et un
+échec total affiche la taille, le SHA-256 relu et le pin attendu. Si les
+`WARNING` persistent, déplacer le clone sur un disque local.
+
 ## 6. Installer et publier séparément
 
 Dans une VM Debian/Ubuntu dédiée, après checksums :

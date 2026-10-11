@@ -2,6 +2,7 @@
 import copy
 import io
 import json
+import os
 from pathlib import Path
 import struct
 import tarfile
@@ -245,11 +246,51 @@ def test_appimage_rejects_unsupported_compression_before_execution(compression):
         release_qt6.appimage_command('AppRun', 'runtime', 'AppDir', 'out.AppImage', compression)
 
 
-def test_retry_directories_are_unique_writable_local_scratch():
-    directories = release_qt6.retry_directories()
+def test_local_scratch_directories_are_unique_and_writable():
+    directories = release_qt6.local_scratch_directories()
     assert directories
     assert len(set(directories)) == len(directories)
-    assert all(path.is_dir() for path in directories)
+    assert all(directory.is_dir() and os.access(directory, os.W_OK) for directory in directories)
+
+
+def elf64_with_a_payload(payload_offset, last_section=((0x100, 0x40)), section_table=(0x100, 64, 1)):
+    """Minimal ELF with a section table, as an AppImage runtime is read by the tooling."""
+    table_offset, entry_size, count = section_table
+    image = bytearray(max(payload_offset, table_offset + entry_size * count) + 4)
+    image[:6] = b'\x7fELF\x02\x01'
+    struct.pack_into('<Q', image, 40, table_offset)
+    struct.pack_into('<H', image, 58, entry_size)
+    struct.pack_into('<H', image, 60, count)
+    struct.pack_into('<Q', image, table_offset + 24, last_section[0])
+    struct.pack_into('<Q', image, table_offset + 32, last_section[1])
+    image[payload_offset:payload_offset + 4] = b'hsqs'
+    return bytes(image)
+
+
+def test_appimage_payload_offset_follows_the_runtime_rule(tmp_path):
+    """The runtime uses the later of the section table end and the last section end."""
+    table_end = tmp_path / 'table.AppImage'
+    table_end.write_bytes(elf64_with_a_payload(0x140))
+    assert release_qt6.appimage_payload_offset(table_end) == 0x140
+    last_section_end = tmp_path / 'section.AppImage'
+    last_section_end.write_bytes(elf64_with_a_payload(0x300, last_section=(0x100, 0x200)))
+    assert release_qt6.appimage_payload_offset(last_section_end) == 0x300
+    broken = tmp_path / 'broken.AppImage'
+    broken.write_bytes(elf64_with_a_payload(0x140).replace(b'hsqs', b'zero'))
+    with pytest.raises(ReleaseError, match='reads returned'):
+        release_qt6.appimage_payload_offset(broken)
+
+
+def test_local_scratch_copy_is_verified(monkeypatch, tmp_path):
+    scratch = tmp_path / 'scratch'
+    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda: [scratch])
+    source = tmp_path / 'source.bin'
+    source.write_bytes(b'pinned bytes')
+    copy = release_qt6.local_scratch_copy(source, packages.sha256(source))
+    assert copy.read_bytes() == source.read_bytes()
+    assert copy.stat().st_mode & 0o111
+    with pytest.raises(ReleaseError, match='No verified local copy'):
+        release_qt6.local_scratch_copy(source, 'f' * 64)
 
 
 def test_appimage_extraction_retries_from_a_local_disk(monkeypatch, tmp_path):
@@ -257,14 +298,15 @@ def test_appimage_extraction_retries_from_a_local_disk(monkeypatch, tmp_path):
     image = tmp_path / 'appimagetool-x86_64.AppImage'
     image.write_bytes(b'\x7fELF\x02\x01' + b'x' * 64)
     local = tmp_path / 'local-temp'
-    monkeypatch.setattr(release_qt6, 'retry_directories', lambda: [local])
+    local.mkdir()
+    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda: [local])
     seen = []
 
     def fake_command(arguments, *, cwd, quiet=False, **kwargs):
         seen.append((Path(arguments[0]), Path(cwd)))
         if len(seen) == 1:
             raise ReleaseError('Command failed (1): the mount cannot read its own image')
-        (Path(cwd) / 'squashfs-root').mkdir(parents=True)
+        (Path(cwd) / 'squashfs-root').mkdir(parents=True, exist_ok=True)
         (Path(cwd) / 'squashfs-root/AppRun').write_text('#!/bin/sh\n', encoding='utf-8')
         return ''
 
@@ -278,16 +320,80 @@ def test_appimage_extraction_retries_from_a_local_disk(monkeypatch, tmp_path):
     assert Path(seen[1][0]).read_bytes() == image.read_bytes()  # same verified bytes
 
 
+def test_appimage_extraction_can_use_the_pinned_runtime(monkeypatch, tmp_path):
+    """TARGET_APPIMAGE makes the pinned runtime read the image by path, not /proc/self/exe."""
+    image = tmp_path / 'tool.AppImage'
+    image.write_bytes(b'\x7fELF\x02\x01' + b'x' * 64)
+    runtime = tmp_path / 'runtime-x86_64'
+    runtime.write_bytes(b'\x7fELF\x02\x01' + b'r' * 64)
+    local = tmp_path / 'local-temp'
+    local.mkdir()
+    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda: [local])
+    environments = []
+
+    def fake_command(arguments, *, cwd, quiet=False, env=None, **kwargs):
+        environments.append((arguments[0], env))
+        if arguments[0] != str(runtime):
+            raise ReleaseError('Command failed (1): cannot open squashfs image')
+        assert env['TARGET_APPIMAGE'] == str(image)
+        (Path(cwd) / 'squashfs-root').mkdir(parents=True, exist_ok=True)
+        (Path(cwd) / 'squashfs-root/AppRun').write_text('#!/bin/sh\n', encoding='utf-8')
+        return ''
+
+    monkeypatch.setattr(release_qt6, 'command', fake_command)
+    root = release_qt6.extract_appimage(image, tmp_path / 'extracted', required='AppRun',
+                                        runtime=runtime)
+    assert environments[-1][0] == str(runtime)
+    assert environments[-1][1]['TARGET_APPIMAGE'] == str(image)
+    assert (root / 'AppRun').is_file()
+
+
+def test_payload_extraction_strips_the_elf_prefix(monkeypatch, tmp_path):
+    """The last resort reads the squashfs itself, from the verified local copy."""
+    image = tmp_path / 'tool.AppImage'
+    image.write_bytes(b'P' * 0x140 + b'hsqs' + b'payload')
+    local = tmp_path / 'local-temp'
+    local.mkdir()
+    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda: [local])
+    runs = []
+
+    def fake_command(arguments, *, cwd, quiet=False, **kwargs):
+        runs.append(arguments)
+        root = Path(arguments[2])
+        root.mkdir(parents=True, exist_ok=True)
+        (root / 'AppRun').write_text('#!/bin/sh\n', encoding='utf-8')
+        return ''
+
+    monkeypatch.setattr(release_qt6, 'command', fake_command)
+    root = release_qt6.extract_squashfs_payload(image, tmp_path / 'out', required='AppRun',
+                                                offset=0x140,
+                                                expected_sha256=packages.sha256(image))
+    assert runs[0][0] == 'unsquashfs'
+    assert Path(runs[0][3]).read_bytes() == b'hsqs' + b'payload'  # payload only, no ELF prefix
+    assert root == tmp_path / 'out/squashfs-root'
+    assert (root / 'AppRun').is_file()
+
+
 def test_appimage_extraction_failure_stays_explicit(monkeypatch, tmp_path):
     image = tmp_path / 'tool.AppImage'
-    image.write_bytes(b'\x7fELF')
-    monkeypatch.setattr(release_qt6, 'retry_directories', lambda: [tmp_path / 't'])
+    image.write_bytes(b'\x7fELF\x02\x01' + b'x' * 16)
+    local = tmp_path / 'local-temp'
+    local.mkdir()
+    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda: [local])
 
     def failing_command(*arguments, **kwargs):
         raise ReleaseError('Command failed (1): no squashfs')
     monkeypatch.setattr(release_qt6, 'command', failing_command)
-    with pytest.raises(ReleaseError, match='local filesystem'):
-        release_qt6.extract_appimage(image, tmp_path / 'out', required='AppRun')
+    def failing_offset(path):
+        raise ReleaseError('No squashfs payload at offset 64')
+    monkeypatch.setattr(release_qt6, 'appimage_payload_offset', failing_offset)
+    with pytest.raises(ReleaseError) as failure:
+        release_qt6.extract_appimage(image, tmp_path / 'out', required='AppRun',
+                                     expected_sha256=packages.sha256(image))
+    message = str(failure.value)
+    assert 'No squashfs payload at offset 64' in message
+    assert 'move the clone to a local disk' in message
+    assert packages.sha256(image) in message  # the bytes on disk are reported, not hidden
 
 
 def test_release_elf_architecture_is_checked_before_execution(tmp_path):
