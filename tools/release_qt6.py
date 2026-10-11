@@ -17,6 +17,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 from urllib.parse import urlencode
 import xml.etree.ElementTree as ET
 
@@ -170,6 +171,60 @@ def require_amd64_elf(path):
     if (len(header) < 20 or header[:4] != b'\x7fELF' or header[4:6] != b'\x02\x01'
             or struct.unpack_from('<H', header, 18)[0] != 62):
         raise ReleaseError(f'Expected an x86_64 ELF executable: {path}')
+
+
+def retry_directories():
+    """Local scratch directories used when the work tree cannot self-parse."""
+    candidates = [{}]
+    shm = Path('/dev/shm')
+    if shm.is_dir() and os.access(shm, os.W_OK):
+        candidates.append({'dir': shm})
+    directories = []
+    for extra in candidates:
+        try:
+            path = Path(tempfile.mkdtemp(prefix='convertall-appimage-', **extra))
+        except OSError:
+            continue
+        if path not in directories:
+            directories.append(path)
+    return directories
+
+
+def extract_appimage(image, destination, *, required, expected_sha256=None):
+    """Extract an AppImage without FUSE, retrying from a local disk if needed.
+
+    `--appimage-extract` needs no FUSE, but the embedded runtime locates its own
+    squashfs by reading the file it was started from. That lookup can fail when
+    the work tree sits on a shared, synchronised or otherwise exotic mount, so
+    the image is copied to a private temporary directory (TMPDIR, then tmpfs)
+    and retried there before the release gives up. Copies are re-verified.
+    """
+    image, destination = Path(image), Path(destination)
+    destination.mkdir(parents=True, exist_ok=True)
+    attempts = [(destination, image)]
+    attempts.extend((retry / 'image', retry / image.name) for retry in retry_directories())
+    errors = []
+    for where, source in attempts:
+        try:
+            if source != image:
+                where.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(image, source)
+                source.chmod(0o755)
+                if expected_sha256 is not None and packages.sha256(source) != expected_sha256:
+                    raise ReleaseError('temporary AppImage copy checksum mismatch')
+            command([source, '--appimage-extract'], cwd=where, quiet=True)
+            root = where / 'squashfs-root'
+            if (root / required).exists():
+                return root
+            errors.append(f'no {required} after extraction in {where}')
+        except ReleaseError as error:
+            errors.append(str(error))
+            if source == image:
+                print(f'Extraction in {where} failed; retrying outside the work tree...',
+                      flush=True)
+    raise ReleaseError('AppImage could not be extracted: ' + '; '.join(errors)
+                       + '\nRun the release from a local filesystem (not a shared or '
+                         'synchronised folder); checksum pins stay enforced.')
 
 
 def maintainer_identity(provided):
@@ -348,12 +403,8 @@ def build_release(args):
     tools.mkdir()
     tool_image = fetch_tool(lock['appimagetool'], tools)
     runtime = fetch_tool(lock['runtime'], tools)
-    tool_extract = tools / 'extracted'
-    tool_extract.mkdir()
-    command([tool_image, '--appimage-extract'], cwd=tool_extract, quiet=True)
-    tool = tool_extract / 'squashfs-root/AppRun'
-    if not tool.is_file():
-        raise ReleaseError('Pinned appimagetool extraction did not contain AppRun')
+    tool = extract_appimage(tool_image, tools / 'extracted', required='AppRun',
+                            expected_sha256=lock['appimagetool']['sha256']) / 'AppRun'
     appdir = packages.stage_appdir(bundle, work / 'ConvertAll.AppDir', ROOT)
     command(['desktop-file-validate', appdir / 'convertall.desktop'])
     image = assets / f'ConvertAll-{version}-x86_64.AppImage'
@@ -363,10 +414,8 @@ def build_release(args):
     # First exercise the actual AppImage runtime, not just the uncompressed AppDir.
     checks['appimage_runtime'] = check_launch(image, 'appimage-runtime', work, environment,
                                              version, prefix=('--appimage-extract-and-run',))
-    app_extract = work / 'appimage-extracted'
-    app_extract.mkdir()
-    command([image, '--appimage-extract'], cwd=app_extract, quiet=True)
-    extracted_app = app_extract / 'squashfs-root'
+    extracted_app = extract_appimage(image, work / 'appimage-extracted',
+                                     required='usr/lib/convertall')
     packages.verify_payload(extracted_app / 'usr/lib/convertall', base_report['bundle_sha256'])
     checks['appimage_apprun'] = check_launch(extracted_app / 'AppRun', 'appimage-apprun', work,
                                             environment, version, bundle=extracted_app / 'usr/lib/convertall')

@@ -245,6 +245,51 @@ def test_appimage_rejects_unsupported_compression_before_execution(compression):
         release_qt6.appimage_command('AppRun', 'runtime', 'AppDir', 'out.AppImage', compression)
 
 
+def test_retry_directories_are_unique_writable_local_scratch():
+    directories = release_qt6.retry_directories()
+    assert directories
+    assert len(set(directories)) == len(directories)
+    assert all(path.is_dir() for path in directories)
+
+
+def test_appimage_extraction_retries_from_a_local_disk(monkeypatch, tmp_path):
+    """A shared or synchronised work tree must not dead-end the AppImage step."""
+    image = tmp_path / 'appimagetool-x86_64.AppImage'
+    image.write_bytes(b'\x7fELF\x02\x01' + b'x' * 64)
+    local = tmp_path / 'local-temp'
+    monkeypatch.setattr(release_qt6, 'retry_directories', lambda: [local])
+    seen = []
+
+    def fake_command(arguments, *, cwd, quiet=False, **kwargs):
+        seen.append((Path(arguments[0]), Path(cwd)))
+        if len(seen) == 1:
+            raise ReleaseError('Command failed (1): the mount cannot read its own image')
+        (Path(cwd) / 'squashfs-root').mkdir(parents=True)
+        (Path(cwd) / 'squashfs-root/AppRun').write_text('#!/bin/sh\n', encoding='utf-8')
+        return ''
+
+    monkeypatch.setattr(release_qt6, 'command', fake_command)
+    root = release_qt6.extract_appimage(image, tmp_path / 'extracted', required='AppRun',
+                                        expected_sha256=packages.sha256(image))
+    assert len(seen) == 2
+    assert Path(seen[1][1]) != Path(seen[0][1])  # retried somewhere else
+    assert root == Path(seen[1][1]) / 'squashfs-root'
+    assert (root / 'AppRun').is_file()
+    assert Path(seen[1][0]).read_bytes() == image.read_bytes()  # same verified bytes
+
+
+def test_appimage_extraction_failure_stays_explicit(monkeypatch, tmp_path):
+    image = tmp_path / 'tool.AppImage'
+    image.write_bytes(b'\x7fELF')
+    monkeypatch.setattr(release_qt6, 'retry_directories', lambda: [tmp_path / 't'])
+
+    def failing_command(*arguments, **kwargs):
+        raise ReleaseError('Command failed (1): no squashfs')
+    monkeypatch.setattr(release_qt6, 'command', failing_command)
+    with pytest.raises(ReleaseError, match='local filesystem'):
+        release_qt6.extract_appimage(image, tmp_path / 'out', required='AppRun')
+
+
 def test_release_elf_architecture_is_checked_before_execution(tmp_path):
     path = tmp_path / 'elf'
     header = bytearray(20)
