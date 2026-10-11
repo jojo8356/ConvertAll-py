@@ -227,6 +227,32 @@ def stage_deb(destination, root, version, maintainer):
     return destination
 
 
+TRANSLATION_WARNING = re.compile(r'translation file "([^"]+)" could not be loaded')
+
+
+def translation_warning_names(output):
+    """Catalogue names the application reported as unloadable, deduplicated."""
+    return sorted(set(TRANSLATION_WARNING.findall(output)))
+
+
+def expected_missing_translations(locale, qt_translations, app_translations):
+    """Which catalogue names may legitimately warn on THIS distribution runtime.
+
+    Distribution Qt may ship fewer widget languages than the pinned wheels, so
+    an absent qtbase file is not a failure. An application catalogue is always
+    shipped by our package; a warning for it is never expected.
+    """
+    name = str(locale).split('.', 1)[0]
+    language = name.split('_', 1)[0]
+    expected = []
+    if not (Path(qt_translations) / f'qtbase_{language}.qm').is_file():
+        expected.append(f'qt_{name}')
+    if not any((Path(app_translations) / f'convertall_{key}.qm').is_file()
+               for key in (name, language)):
+        expected.append(f'convertall_{name}')
+    return sorted(expected)
+
+
 def verify_thin_deb_payload(directory):
     directory = Path(directory)
     app = directory / 'usr/share/convertall'
@@ -244,8 +270,11 @@ def verify_thin_deb_payload(directory):
                     raise ReleaseError(f'ELF binary in architecture-all Debian package: {path}')
     if len(list((app / 'data').glob('*.dat'))) != 7:
         raise ReleaseError('Debian package must preserve all seven unit catalogues')
-    if len(list((app / 'translations').glob('convertall_*.qm'))) != 6:
-        raise ReleaseError('Debian package must preserve all six application translations')
+    shipped = {path.name for path in (app / 'translations').glob('*.qm')}
+    expected_languages = {f'convertall_{language}.qm'
+                          for language in ('ca', 'de', 'es', 'fr', 'ru', 'sv')}
+    if shipped != expected_languages:
+        raise ReleaseError('Debian package must ship exactly the six application translations')
 
 
 def validate_debian_runtime(runtime, version):

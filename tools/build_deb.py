@@ -68,17 +68,31 @@ def check_extracted(directory, work, version):
             raise ReleaseError(f'Wrong native Debian conversion: {text}')
     if launch('--test-all').count('All units pass tests') != 7:
         raise ReleaseError('Not every native Debian catalogue passed')
+    app_translations = Path(directory) / 'usr/share/convertall/translations'
+    language_report = {}
     for locale in ('fr_FR.UTF-8', 'ca_ES.UTF-8', 'sv_SE.UTF-8'):
         env['LC_MESSAGES'] = locale
         text = launch('--test')
-        if 'Warning' in text or 'All units pass tests' not in text:
-            raise ReleaseError(f'Native Debian translations missing: {locale}')
+        if 'All units pass tests' not in text:
+            raise ReleaseError(f'Native Debian unit test failed for {locale}')
+        names = packages.translation_warning_names(text)
+        expected = packages.expected_missing_translations(
+            locale, runtime['qt_translations_path'], app_translations)
+        # Only a genuinely absent distribution widget catalogue may warn; the
+        # application's own catalogue must never be the missing one.
+        if names != expected or any(name.startswith('convertall_') for name in names):
+            raise ReleaseError(f'Native Debian translations mismatched for {locale}: '
+                               f'warnings={names}, expected={expected}')
+        language_report[locale] = {
+            'widget_catalogue_present': not any(name.startswith('qt_') for name in expected),
+            'warnings': names}
     env['LC_MESSAGES'] = 'C'
     if 'GUI smoke test passed' not in launch('--gui-smoke-test'):
         raise ReleaseError('Native Debian GUI/resources failed')
     return {'status': 'PASS', 'runtime': runtime, 'qt_platform': 'offscreen',
             'tests': ['runtime-origin', 'four-conversions', 'seven-catalogues',
                       'system-qtbase/app-translations', 'gui-resources'],
+            'languages': language_report,
             'manual_installation_tested': False}
 
 

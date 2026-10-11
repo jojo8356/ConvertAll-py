@@ -16,6 +16,12 @@ ne sont pas des résultats 0.9.1.
   avec le venv des bundles.
 - CI native Debian Bookworm/Trixie : régressions applicatives, couverture
   80 % conservée et contrôle du vrai paquet extrait avec Qt système.
+- Traductions de widgets : la distribution peut ne pas fournir toutes les
+  langues de `qtbase` (par exemple `qtbase_sv` absent). Le contrôle exige
+  donc : catalogue présent ⇒ doit charger ; catalogue réellement absent ⇒
+  l'application doit le signaler proprement. Un catalogue applicatif
+  manquant reste toujours une erreur. Les paquets 0.9.0/bundles conservent
+  leurs six langues de widgets épinglées.
 - Les bundles portable, Windows et AppImage restent autonomes et conservent
   le profil exact PyQt6 6.11.0 / Qt 6.11.2 / PyQt6-sip 13.13.0.
 

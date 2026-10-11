@@ -84,6 +84,46 @@ def test_debian_packaging_does_not_collect_wheel_notices_or_frozen_payload(tmp_p
     assert not list(stage.rglob('*.ts'))  # TS/build inputs remain available in the source archive.
 
 
+def test_distribution_widget_translations_are_only_tolerated_when_truly_missing(tmp_path):
+    qt, app = tmp_path / 'qt', tmp_path / 'app'
+    qt.mkdir()
+    app.mkdir()
+    (app / 'convertall_fr.qm').write_bytes(b'qm')
+    (app / 'convertall_sv.qm').write_bytes(b'qm')
+    # Absent widget catalogue is reported, never hidden.
+    assert packages.expected_missing_translations('sv_SE.UTF-8', qt, app) == ['qt_sv_SE']
+    (qt / 'qtbase_fr.qm').write_bytes(b'qm')
+    assert packages.expected_missing_translations('fr_FR.UTF-8', qt, app) == []
+    # A missing application catalogue is surfaced so callers can reject it.
+    assert packages.expected_missing_translations('de_DE.UTF-8', qt, app) == [
+        'convertall_de_DE', 'qt_de_DE']
+    (app / 'convertall_de.qm').write_bytes(b'qm')
+    assert packages.expected_missing_translations('de_DE.UTF-8', qt, app) == ['qt_de_DE']
+
+
+def test_warning_parser_reports_each_unloadable_catalogue_once():
+    output = ('Warning: translation file "qt_sv_SE" could not be loaded\n'
+              'Warning: translation file "qt_sv_SE" could not be loaded\n'
+              'All units pass tests\n')
+    assert packages.translation_warning_names(output) == ['qt_sv_SE']
+    assert packages.translation_warning_names('All units pass tests\n') == []
+
+
+def test_thin_package_must_ship_every_application_translation(tmp_path):
+    stage = packages.stage_deb(tmp_path / 'deb', ROOT, '0.9.1', 'Test <test@example.invalid>')
+    (stage / 'usr/share/convertall/translations/convertall_sv.qm').unlink()
+    with pytest.raises(ReleaseError, match='six application translations'):
+        packages.verify_thin_deb_payload(stage)
+
+
+def test_native_deb_checker_rejects_a_missing_application_catalogue():
+    text = (ROOT / 'tools/build_deb.py').read_text(encoding='utf-8')
+    assert "any(name.startswith('convertall_') for name in names)" in text
+    assert 'expected_missing_translations' in text
+    # The previous substring check would have failed on an absent widget language.
+    assert "'Warning' in text" not in text
+
+
 def test_ci_exercises_native_debian_versions_without_installing_qt_wheels():
     workflow = (ROOT / '.github/workflows/qt6-release.yml').read_text(encoding='utf-8')
     native = workflow.split('  native-deb:', 1)[1].split('  bundle:', 1)[0]

@@ -39,11 +39,31 @@ def test_all_app_catalogues_load_and_translate_active_ts_messages(qapp, language
 
 
 @pytest.mark.parametrize('language', ['ca', 'de', 'es', 'fr', 'ru', 'sv'])
-def test_qt6_runtime_qtbase_catalogues_are_readable(qapp, language):
+def test_qt6_runtime_qtbase_catalogues_are_readable_or_reported_absent(qapp, capsys, monkeypatch,
+                                                                      language):
+    """Distribution Qt may ship fewer widget languages than the pinned wheels.
+
+    The contract is exact, not lenient: a shipped catalogue must load, and an
+    absent one must be reported cleanly instead of breaking the application.
+    """
+    path = Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath))
     translator = QTranslator()
-    path = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
-    assert translator.load(f'qtbase_{language}', path)
-    assert not translator.isEmpty()
+    if (path / f'qtbase_{language}.qm').is_file():
+        assert translator.load(f'qtbase_{language}', str(path))
+        assert not translator.isEmpty()
+        return
+    monkeypatch.setattr(convertall, 'translationPath', str(ROOT / 'translations'))
+    before = set(qapp.findChildren(QTranslator))
+    try:
+        assert not convertall.loadTranslator(f'qt_{language}', qapp)
+        output = capsys.readouterr().out
+        assert f'translation file "qt_{language}" could not be loaded' in output
+        assert 'Traceback' not in output
+        assert (ROOT / 'translations' / f'convertall_{language}.qm').is_file()
+    finally:
+        for extra in set(qapp.findChildren(QTranslator)) - before:
+            qapp.removeTranslator(extra)
+            extra.deleteLater()
 
 
 def test_translator_region_fallback_and_missing_file(qapp, monkeypatch, capsys):

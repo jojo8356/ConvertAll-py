@@ -73,6 +73,14 @@ seuil de couverture 80 % inchangé, puis construisent et contrôlent le `.deb`
 avec `/usr/bin/python3` hors de ce venv. Les assertions du profil frozen restent
 exécutées intégralement par les huit jobs épinglés.
 
+Les contrôles de traductions natives sont exacts mais non naïfs : Debian ne
+fournit pas forcément toutes les langues de widgets (`qtbase_sv` peut manquer).
+Un catalogue présent doit charger ; un catalogue réellement absent doit être
+signalé par l'application (`Warning: translation file ... could not be loaded`)
+sans exception. Les six `convertall_*.qm` applicatifs restent obligatoires,
+et leur absence échoue toujours. Les bundles conservent, eux, les six langues
+de widgets du profil épinglé.
+
 Localement le lanceur refait la suite épinglée et les bundles. Le `.deb` est
 construit depuis les **sources**, jamais en supprimant des `.so` d'un exécutable
 PyInstaller. Après extraction sans installation/root : comparaison des octets,
