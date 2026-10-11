@@ -148,8 +148,20 @@ def test_native_deb_checker_probes_the_system_runtime_before_packaging_and_trace
     assert 'native-deb-failure.txt' in text
     assert 'except Exception as error' in text  # unexpected failures stay reportable
     # The system runtime must be validated before anything is staged or built.
-    assert text.index('probe_system(version)') < text.index('stage_deb(')
-    assert text.index('stage_deb(') < text.index('check_extracted(')
+    body = text.split('def build(', 1)[1]
+    assert body.index('probe_system(version)') < body.index('stage_deb(')
+    assert body.index('stage_deb(') < body.index('check_extracted(')
+
+
+def test_native_deb_git_calls_trust_the_ci_container_checkout():
+    """Container jobs mount a foreign-owned workspace; plain git refuses it."""
+    text = (ROOT / 'tools/build_deb.py').read_text(encoding='utf-8')
+    assert "run(['git', '-c', f'safe.directory={ROOT}'" in text
+    assert "git('rev-parse', 'HEAD')" in text
+    assert "git('status', '--porcelain')" in text
+    assert "git('show', '-s', '--format=%ct', commit)" in text
+    # Every git call goes through that helper, so none can bypass the trust flag.
+    assert text.count("run(['git',") == 1
 
 
 def test_ci_exercises_native_debian_versions_without_installing_qt_wheels():

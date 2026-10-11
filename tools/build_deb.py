@@ -84,6 +84,16 @@ def run(arguments, *, cwd=ROOT, env=None):
     return result.stdout
 
 
+def git(*arguments):
+    """Run git for this checkout only.
+
+    Container CI mounts the workspace with a different owner, so plain `git`
+    refuses to work ("detected dubious ownership"). Trusting exactly this
+    repository through -c keeps the fix local instead of editing global config.
+    """
+    return run(['git', '-c', f'safe.directory={ROOT}', *arguments])
+
+
 def runtime_json(output):
     """Read the JSON runtime report even if warnings were printed before it."""
     for line in reversed(output.splitlines()):
@@ -177,8 +187,8 @@ def check_extracted(directory, work, version):
 
 
 def build(output, work, maintainer):
-    commit = run(['git', 'rev-parse', 'HEAD']).strip()
-    dirty = run(['git', 'status', '--porcelain']).strip()
+    commit = git('rev-parse', 'HEAD').strip()
+    dirty = git('status', '--porcelain').strip()
     if dirty:
         raise ReleaseError('Thin Debian release requires a clean committed tree:\n' + dirty[:600])
     if os.environ.get('GITHUB_SHA', commit) != commit:
@@ -205,7 +215,7 @@ def build(output, work, maintainer):
         raise ReleaseError('Debian output already exists; no overwrite is performed')
     with stage('build .deb with dpkg-deb'):
         env = environment()
-        env['SOURCE_DATE_EPOCH'] = run(['git', 'show', '-s', '--format=%ct', commit]).strip()
+        env['SOURCE_DATE_EPOCH'] = git('show', '-s', '--format=%ct', commit).strip()
         run(['dpkg-deb', '--root-owner-group', '-Zxz', '-z9', '--build', staged, deb], env=env)
         extracted = work / 'extracted'
         run(['dpkg-deb', '--extract', deb, extracted])
@@ -213,7 +223,7 @@ def build(output, work, maintainer):
         note(f'built {deb.name} ({deb.stat().st_size} bytes); every payload hash verified')
     with stage('execute extracted package'):
         checks = check_extracted(extracted, work, version)
-    if commit != run(['git', 'rev-parse', 'HEAD']).strip() or run(['git', 'status', '--porcelain']).strip():
+    if commit != git('rev-parse', 'HEAD').strip() or git('status', '--porcelain').strip():
         raise ReleaseError('Git inputs changed during native Debian packaging')
     report = {**checks, 'version': version, 'source_commit': commit,
               'package': deb.name, 'architecture': 'all', 'runtime_profile': 'debian-system-qt',
