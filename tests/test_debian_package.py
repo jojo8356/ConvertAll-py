@@ -124,6 +124,34 @@ def test_native_deb_checker_rejects_a_missing_application_catalogue():
     assert "'Warning' in text" not in text
 
 
+def test_native_deb_failures_are_annotated_for_logless_debugging(tmp_path, monkeypatch, capsys):
+    """CI logs and artifacts can be unreachable, so failures must reach the API."""
+    import build_deb
+    monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+    monkeypatch.setattr(build_deb, 'STEP', {'name': 'execute extracted package'})
+    build_deb.TRACE.append('staged 40 files for 0.9.1')
+    build_deb.report_failure(tmp_path,
+                             ReleaseError('translations mismatched: warnings=[], expected=[qt_sv_SE]'),
+                             'Traceback (most recent call last):\n')
+    captured = capsys.readouterr()
+    report = (tmp_path / 'native-deb-failure.txt').read_text(encoding='utf-8')
+    assert 'step=execute extracted package' in report
+    assert 'expected=[qt_sv_SE]' in report
+    assert 'staged 40 files for 0.9.1' in report
+    assert '::error title=Native Debian package failed (execute extracted package)' in captured.out
+
+
+def test_native_deb_checker_probes_the_system_runtime_before_packaging_and_traces_milestones():
+    text = (ROOT / 'tools/build_deb.py').read_text(encoding='utf-8')
+    assert '::notice title=ConvertAll native .deb::' in text
+    assert '::error title=Native Debian package failed' in text
+    assert 'native-deb-failure.txt' in text
+    assert 'except Exception as error' in text  # unexpected failures stay reportable
+    # The system runtime must be validated before anything is staged or built.
+    assert text.index('probe_system(version)') < text.index('stage_deb(')
+    assert text.index('stage_deb(') < text.index('check_extracted(')
+
+
 def test_ci_exercises_native_debian_versions_without_installing_qt_wheels():
     workflow = (ROOT / '.github/workflows/qt6-release.yml').read_text(encoding='utf-8')
     native = workflow.split('  native-deb:', 1)[1].split('  bundle:', 1)[0]
@@ -131,6 +159,8 @@ def test_ci_exercises_native_debian_versions_without_installing_qt_wheels():
     assert '--system-site-packages' in native
     assert 'requirements-test-debian.txt' in native
     assert '/usr/bin/python3 -E -s tools/build_deb.py' in native
+    # The runtime probe is a separate step, so CI status alone localises failures.
+    assert '/usr/bin/python3 -E -s tools/build_deb.py --probe-system' in native
     assert 'requirements-qt6.txt' not in native
     assert '--cov=source' in native and '--cov-fail-under=0' not in native
     requirements = (ROOT / 'requirements-test-debian.txt').read_text(encoding='utf-8')

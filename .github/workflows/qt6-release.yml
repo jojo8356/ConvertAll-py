@@ -86,6 +86,9 @@ jobs:
       - name: Application regressions on distribution Qt (coverage gate unchanged)
         run: |
           .venv/debian-tests/bin/python -m pytest -q -m 'not pinned_qt_profile' tests/test_bases.py tests/test_catalogues.py tests/test_engine.py tests/test_gui.py tests/test_qt6_migration.py tests/test_resources.py tests/test_options.py tests/test_option_locale.py tests/test_cli.py tests/test_cli_validator.py --cov=source --cov-branch --cov-report=xml:build/native-debian/coverage.xml --cov-report=json:build/native-debian/coverage.json --junitxml=build/native-debian/junit.xml
+      - name: Verify the distribution Qt runtime with the system interpreter
+        run: |
+          /usr/bin/python3 -E -s tools/build_deb.py --probe-system --output-dir build/native-debian
       - name: Build and execute the thin .deb with system Python outside the test venv
         run: |
           /usr/bin/python3 -E -s tools/build_deb.py --output-dir build/native-debian --maintainer 'ConvertAll-py CI <jojo8356@users.noreply.github.com>'

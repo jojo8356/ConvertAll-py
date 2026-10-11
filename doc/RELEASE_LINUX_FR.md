@@ -107,7 +107,21 @@ Pour préparer seulement le `.deb`, sans bundles ni publication :
 Cette commande contrôle le paquet natif ; elle ne remplace ni la suite complète
 ni la CI du même SHA avant publication. Pas d'overwrite d'un paquet existant.
 
-## 4. AppImage verrouillée
+## 4. Contrôles CI et diagnostic des échecs
+
+La CI Qt6 doit être verte sur **12 jobs** pour le SHA exact avant tout tag. Les
+jobs `Debian native Qt / bookworm|trixie` valident le `.deb` léger avec le
+Python et le Qt d'APT, hors venv de test ; la vérification du runtime système
+est une étape séparée du build, donc le statut des étapes situe déjà la panne.
+
+`tools/build_deb.py` publie ses jalons en annotations (`notice`) et, en cas
+d'échec, une annotation `error` avec l'étape fautive, le message et les
+dernières lignes de trace ; le même texte est écrit dans
+`build/native-debian/native-deb-failure.txt` (artefact `qt6-native-deb-<suite>`).
+Ainsi `gh api .../check-runs/<id>/annotations` suffit à diagnostiquer un échec
+même quand les logs et artefacts ne sont pas téléchargeables.
+
+## 5. AppImage verrouillée
 
 `tools/appimage-lock.json` conserve IDs et SHA-256 du builder et du runtime.
 Le builder utilise explicitement le runtime épinglé et **zstd**, seul
@@ -119,7 +133,7 @@ Le runtime [type2-runtime](https://github.com/AppImage/type2-runtime) choisi
 est statique (musl/libfuse) ; la QA emploie extraction/exécution sans FUSE.
 Le montage FUSE réel et la compatibilité GPU restent à accepter sur le poste.
 
-## 5. Installer et publier séparément
+## 6. Installer et publier séparément
 
 Dans une VM Debian/Ubuntu dédiée, après checksums :
 
