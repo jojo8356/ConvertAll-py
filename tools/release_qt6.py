@@ -324,7 +324,7 @@ def extract_appimage(image, destination, *, required, expected_sha256=None, runt
                   flush=True)
             return extract_squashfs_payload(image, destination, required=required, offset=offset,
                                             expected_sha256=expected_sha256)
-        except ReleaseError as error:
+        except (ReleaseError, OSError, ValueError) as error:
             errors.append(f'direct payload read: {error}')
     else:
         errors.append('unsquashfs is not installed (install squashfs-tools)')

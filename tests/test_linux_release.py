@@ -302,7 +302,7 @@ def test_appimage_extraction_retries_from_a_local_disk(monkeypatch, tmp_path):
     monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda: [local])
     seen = []
 
-    def fake_command(arguments, *, cwd, quiet=False, **kwargs):
+    def fake_command(arguments, *, cwd=None, quiet=False, **kwargs):
         seen.append((Path(arguments[0]), Path(cwd)))
         if len(seen) == 1:
             raise ReleaseError('Command failed (1): the mount cannot read its own image')
@@ -331,9 +331,9 @@ def test_appimage_extraction_can_use_the_pinned_runtime(monkeypatch, tmp_path):
     monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda: [local])
     environments = []
 
-    def fake_command(arguments, *, cwd, quiet=False, env=None, **kwargs):
-        environments.append((arguments[0], env))
-        if arguments[0] != str(runtime):
+    def fake_command(arguments, *, cwd=None, quiet=False, env=None, **kwargs):
+        environments.append((Path(arguments[0]), env))
+        if Path(arguments[0]) != runtime:
             raise ReleaseError('Command failed (1): cannot open squashfs image')
         assert env['TARGET_APPIMAGE'] == str(image)
         (Path(cwd) / 'squashfs-root').mkdir(parents=True, exist_ok=True)
@@ -343,7 +343,8 @@ def test_appimage_extraction_can_use_the_pinned_runtime(monkeypatch, tmp_path):
     monkeypatch.setattr(release_qt6, 'command', fake_command)
     root = release_qt6.extract_appimage(image, tmp_path / 'extracted', required='AppRun',
                                         runtime=runtime)
-    assert environments[-1][0] == str(runtime)
+    # in place, then a local copy, then the pinned runtime with TARGET_APPIMAGE
+    assert [program for program, _ in environments] == [image, local / image.name, runtime]
     assert environments[-1][1]['TARGET_APPIMAGE'] == str(image)
     assert (root / 'AppRun').is_file()
 
@@ -357,7 +358,7 @@ def test_payload_extraction_strips_the_elf_prefix(monkeypatch, tmp_path):
     monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda: [local])
     runs = []
 
-    def fake_command(arguments, *, cwd, quiet=False, **kwargs):
+    def fake_command(arguments, *, cwd=None, quiet=False, **kwargs):
         runs.append(arguments)
         root = Path(arguments[2])
         root.mkdir(parents=True, exist_ok=True)
