@@ -253,7 +253,8 @@ def test_local_scratch_directories_are_unique_writable_and_executable():
     assert directories
     assert len(set(directories)) == len(directories)
     assert all(directory.is_dir() and os.access(directory, os.W_OK) for directory in directories)
-    assert notes == []
+    assert all(release_qt6.directory_can_execute(directory) for directory in directories)
+    assert all('noexec' not in note for note in notes)  # rejected candidates are not returned
 
 
 def test_local_scratch_directories_reject_noexec_mounts(monkeypatch, tmp_path):
@@ -308,7 +309,7 @@ def test_appimage_payload_offset_follows_the_runtime_rule(tmp_path):
 
 def test_local_scratch_copy_is_verified(monkeypatch, tmp_path):
     scratch = tmp_path / 'scratch'
-    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda: [scratch])
+    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda notes=None: [scratch])
     source = tmp_path / 'source.bin'
     source.write_bytes(b'pinned bytes')
     copy = release_qt6.local_scratch_copy(source, packages.sha256(source))
@@ -328,7 +329,7 @@ def test_appimage_extraction_retries_from_a_local_disk(monkeypatch, tmp_path):
     image.write_bytes(b'\x7fELF\x02\x01' + b'x' * 64)
     local = tmp_path / 'local-temp'
     local.mkdir()
-    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda: [local])
+    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda notes=None: [local])
     seen = []
 
     def fake_command(arguments, *, cwd=None, quiet=False, **kwargs):
@@ -357,7 +358,7 @@ def test_appimage_extraction_can_use_the_pinned_runtime(monkeypatch, tmp_path):
     runtime.write_bytes(b'\x7fELF\x02\x01' + b'r' * 64)
     local = tmp_path / 'local-temp'
     local.mkdir()
-    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda: [local])
+    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda notes=None: [local])
     environments = []
 
     def fake_command(arguments, *, cwd=None, quiet=False, env=None, **kwargs):
@@ -384,7 +385,7 @@ def test_payload_extraction_strips_the_elf_prefix(monkeypatch, tmp_path):
     image.write_bytes(b'P' * 0x140 + b'hsqs' + b'payload')
     local = tmp_path / 'local-temp'
     local.mkdir()
-    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda: [local])
+    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda notes=None: [local])
     runs = []
 
     def fake_command(arguments, *, cwd=None, quiet=False, **kwargs):
@@ -437,7 +438,7 @@ def test_appimage_extraction_failure_stays_explicit(monkeypatch, tmp_path):
     image.write_bytes(b'\x7fELF\x02\x01' + b'x' * 16)
     local = tmp_path / 'local-temp'
     local.mkdir()
-    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda: [local])
+    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda notes=None: [local])
 
     def failing_command(*arguments, **kwargs):
         raise ReleaseError('Command failed (1): no squashfs')
