@@ -29,6 +29,9 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO = 'jojo8356/ConvertAll-py'
 BRANCH = 'arena/0adacf84-convertall-py'
 WORKFLOW = '.github/workflows/qt6-release.yml'
+# The workflow only runs for a commit carrying this marker in its message, so
+# ordinary commits stay quiet. Both sides must agree; a test pins that.
+CI_MARKER = '[PROD]'
 LOG = None
 
 
@@ -91,29 +94,73 @@ def validate_ci_jobs(jobs):
     passed = {job['name'] for job in jobs
               if job.get('status') == 'completed' and job.get('conclusion') == 'success'}
     if not expected.issubset(passed):
-        raise ReleaseError(f'Missing/failed CI jobs: {sorted(expected - passed)}')
+        hint = (f' CI only runs for commits whose message contains {CI_MARKER}, so a quiet '
+                f'push produces no green job at all.') if not passed else ''
+        raise ReleaseError(f'Missing/failed CI jobs: {sorted(expected - passed)}.{hint}')
+
+
+def ci_jobs(run_id):
+    return github(f'repos/{REPO}/actions/runs/{run_id}/jobs?per_page=100')['jobs']
+
+
+def watch_ci(run):
+    print(f'Waiting for CI {run["id"]} (no local build has started)...', flush=True)
+    try:
+        command(['gh', 'run', 'watch', str(run['id']), '--repo', REPO, '--exit-status'])
+    except ReleaseError as error:
+        print(f'WARNING: {error}', flush=True)
+    return github(f'repos/{REPO}/actions/runs/{run["id"]}')
+
+
+def qualifying_ci_run(candidates, commit):
+    """Newest completed push of this SHA whose twelve required jobs are green.
+
+    A quiet push only produces skipped jobs, so it can never qualify even if its
+    run is reported as successful, and an older green run is never masked by a
+    newer quiet one.
+    """
+    for candidate in candidates:
+        if candidate.get('status') != 'completed':
+            continue
+        try:
+            validate_ci_run(candidate, commit)
+            validate_ci_jobs(ci_jobs(candidate['id']))
+        except ReleaseError:
+            continue
+        return candidate
+    return None
 
 
 def select_ci(commit, run_id, wait):
     if run_id:
         run = github(f'repos/{REPO}/actions/runs/{run_id}')
-    else:
-        query = urlencode({'branch': BRANCH, 'head_sha': commit, 'event': 'push', 'per_page': 100})
-        data = github(f'repos/{REPO}/actions/workflows/qt6-release.yml/runs?{query}')
-        candidates = [item for item in data['workflow_runs'] if item['head_sha'] == commit]
-        if not candidates:
-            raise ReleaseError('No CI run for this SHA. Push this branch and wait for Actions.')
-        run = next((item for item in candidates if item['conclusion'] == 'success'), candidates[0])
-    if (run.get('head_sha') != commit or run.get('head_branch') != BRANCH
-            or run.get('path', '').split('@', 1)[0] != WORKFLOW or run.get('event') != 'push'):
-        raise ReleaseError('The selected CI run belongs to another SHA/branch/workflow')
-    if run['status'] != 'completed' and wait:
-        print(f'Waiting for CI {run["id"]} (no local build has started)...', flush=True)
-        command(['gh', 'run', 'watch', run['id'], '--repo', REPO, '--exit-status'])
-        run = github(f'repos/{REPO}/actions/runs/{run["id"]}')
-    validate_ci_run(run, commit)
-    jobs = github(f'repos/{REPO}/actions/runs/{run["id"]}/jobs?per_page=100')['jobs']
-    validate_ci_jobs(jobs)
+        if (run.get('head_sha') != commit or run.get('head_branch') != BRANCH
+                or run.get('path', '').split('@', 1)[0] != WORKFLOW
+                or run.get('event') != 'push'):
+            raise ReleaseError('The selected CI run belongs to another SHA/branch/workflow')
+        if run['status'] != 'completed' and wait:
+            run = watch_ci(run)
+        validate_ci_run(run, commit)
+        validate_ci_jobs(ci_jobs(run['id']))
+        return run
+    query = urlencode({'branch': BRANCH, 'head_sha': commit, 'event': 'push', 'per_page': 100})
+    data = github(f'repos/{REPO}/actions/workflows/qt6-release.yml/runs?{query}')
+    candidates = [item for item in data['workflow_runs'] if item['head_sha'] == commit]
+    if not candidates:
+        raise ReleaseError(f'No CI run for this SHA: CI only runs for a commit whose message '
+                           f'contains {CI_MARKER}. Amend the message (git commit --amend) and '
+                           'push, or select an existing run with --run-id.')
+    run = qualifying_ci_run(candidates, commit)
+    if run is None and wait:
+        pending = next((item for item in candidates if item.get('status') != 'completed'), None)
+        if pending is not None:
+            run = qualifying_ci_run([watch_ci(pending), *candidates], commit)
+    if run is None:
+        found = ', '.join(f'{item["id"]}={item.get("status")}/{item.get("conclusion")}'
+                          for item in candidates[:5])
+        raise ReleaseError(f'No CI run for this SHA has all twelve green jobs ({len(candidates)} '
+                           f'run(s) found: {found}). CI only runs for a commit whose message '
+                           f'contains {CI_MARKER}, and every one of the twelve jobs must pass.')
     return run
 
 

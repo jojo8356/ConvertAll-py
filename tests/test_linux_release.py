@@ -211,6 +211,94 @@ def test_ci_requires_all_eight_tests_and_both_native_bundles():
         release_qt6.validate_ci_jobs(jobs)
 
 
+CI_JOB_NAMES = ([f'Tests {os_name} / Python {version} / Qt6'
+                 for os_name in ('ubuntu-24.04', 'windows-2022')
+                 for version in ('3.11', '3.12', '3.13', '3.14')]
+                + [f'Bundle {os_name} / Qt6' for os_name in ('ubuntu-24.04', 'windows-2022')]
+                + [f'Debian native Qt / {suite}' for suite in ('bookworm', 'trixie')])
+
+
+def ci_jobs_with(default_conclusion='success'):
+    return [{'name': name, 'status': 'completed', 'conclusion': default_conclusion}
+            for name in CI_JOB_NAMES]
+
+
+def ci_run(run_id, status='completed', conclusion='success'):
+    return {'id': run_id, 'head_sha': SHA, 'head_branch': release_qt6.BRANCH,
+            'path': release_qt6.WORKFLOW, 'event': 'push', 'status': status,
+            'conclusion': conclusion}
+
+
+def fake_github(runs, jobs_by_run):
+    def github(endpoint, *, missing_ok=False):
+        if '/actions/workflows/qt6-release.yml/runs?' in endpoint:
+            return {'workflow_runs': list(runs)}
+        if endpoint.endswith('/jobs?per_page=100'):
+            return {'jobs': jobs_by_run[int(endpoint.split('/runs/')[1].split('/')[0])]}
+        return runs[-1]
+    return github
+
+
+def test_ci_runs_only_for_the_configured_release_marker():
+    """The workflow gate and the script constant must describe the same rule."""
+    workflow = (ROOT / '.github/workflows/qt6-release.yml').read_text(encoding='utf-8')
+    marker = release_qt6.CI_MARKER
+    assert marker == '[PROD]'
+    gate = f"contains(github.event.head_commit.message || '', '{marker}')"
+    # `on:` mentions the event once; each of the three jobs carries the gate.
+    assert workflow.count("github.event_name == 'workflow_dispatch'") == 3
+    assert workflow.count(gate) == 4  # three jobs plus the concurrency group
+    order = ['  tests:', '  native-deb:', '  bundle:']
+    for index, header in enumerate(order):
+        start = workflow.index('\n' + header)
+        end = workflow.index('\n' + order[index + 1]) if index + 1 < len(order) else len(workflow)
+        assert gate in workflow[start:end], header
+        assert "github.event.pull_request.title || '', '" + marker + "'" in workflow[start:end]
+    # A quiet push gets its own concurrency group: it can never cancel a marked run.
+    assert "'release' || 'quiet'" in workflow
+    for document in ('README.md', 'doc/RELEASE_LINUX_FR.md'):
+        assert marker in (ROOT / document).read_text(encoding='utf-8'), document
+
+
+def test_select_ci_skips_a_quiet_run_even_when_it_is_reported_successful(monkeypatch):
+    marked, quiet = ci_run(42), ci_run(41)
+    jobs = {42: ci_jobs_with(), 41: ci_jobs_with('skipped')}
+    monkeypatch.setattr(release_qt6, 'github', fake_github([quiet, marked], jobs))
+    assert release_qt6.select_ci(SHA, None, wait=False)['id'] == 42
+
+
+def test_select_ci_refuses_a_history_without_a_green_marked_run(monkeypatch):
+    monkeypatch.setattr(release_qt6, 'github',
+                        fake_github([ci_run(7)], {7: ci_jobs_with('skipped')}))
+    with pytest.raises(ReleaseError, match='twelve green jobs'):
+        release_qt6.select_ci(SHA, None, wait=False)
+    monkeypatch.setattr(release_qt6, 'github', fake_github([], {}))
+    with pytest.raises(ReleaseError, match='contains \\[PROD\\]'):
+        release_qt6.select_ci(SHA, None, wait=False)
+
+
+def test_select_ci_waits_for_a_pending_run_instead_of_using_an_old_one(monkeypatch):
+    runs = [ci_run(9, status='in_progress', conclusion=None)]
+    watched = []
+
+    def fake_command(arguments, **kwargs):
+        watched.append(arguments)
+        runs[0] = ci_run(9)  # the run finished while it was being watched
+        return ''
+
+    monkeypatch.setattr(release_qt6, 'command', fake_command)
+    monkeypatch.setattr(release_qt6, 'github', fake_github(runs, {9: ci_jobs_with()}))
+    selected = release_qt6.select_ci(SHA, None, wait=True)
+    assert selected['id'] == 9
+    assert watched and watched[0][:3] == ['gh', 'run', 'watch']
+
+
+def test_missing_jobs_message_names_the_marker_when_nothing_ran():
+    with pytest.raises(ReleaseError, match='contains \\[PROD\\]'):
+        release_qt6.validate_ci_jobs([{'name': 'Tests ubuntu-24.04 / Python 3.11 / Qt6',
+                                       'status': 'completed', 'conclusion': 'skipped'}])
+
+
 def test_tool_locks_are_explicit_and_unverified_assets_are_not_executed(tmp_path, monkeypatch):
     lock = json.loads((ROOT / 'tools/appimage-lock.json').read_text(encoding='utf-8'))
     assert lock['architecture'] == 'x86_64'

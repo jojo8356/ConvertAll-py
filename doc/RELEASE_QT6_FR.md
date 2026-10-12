@@ -179,6 +179,11 @@ SHA actuel, télécharge son archive source, en vérifie la provenance et refuse
 un tag existant visant un autre commit. Il ne retargete aucun tag et ne publie
 pas en Latest. Il crée un draft contenant les trois assets source de la CI.
 
+Le run doit être un **push marqué** : le workflow Qt6 ne s'exécute que si le
+message du commit contient `[PROD]` (voir `doc/RELEASE_LINUX_FR.md` §4). Un
+commit ordinaire ne lance aucun job, donc un lancement manuel seul ne fournit
+pas le run exigé par la release.
+
 ```bash
 set -euo pipefail
 REPO='jojo8356/ConvertAll-py'

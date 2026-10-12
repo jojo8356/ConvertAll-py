@@ -114,6 +114,33 @@ jobs `Debian native Qt / bookworm|trixie` valident le `.deb` léger avec le
 Python et le Qt d'APT, hors venv de test ; la vérification du runtime système
 est une étape séparée du build, donc le statut des étapes situe déjà la panne.
 
+**Condition de déclenchement** : le workflow ne s'exécute que si le message du
+commit contient `[PROD]` (titre ou branche pour une pull request). Un commit
+ordinaire ne lance rien, il n'y a donc plus qu'un run par SHA susceptible d'être
+release. Pour préparer une version :
+
+```bash
+git commit -m "[PROD] Prepare the 0.9.1 release"
+git push origin arena/0adacf84-convertall-py
+```
+
+Deux conséquences pratiques : les push silencieux ne peuvent ni remplacer ni
+annuler un run marqué (groupes de concurrence séparés), et
+`release_qt6.py` refuse de préparer un SHA sans run **push** marqué dont les
+12 jobs sont verts — il l'explique et rappelle le marqueur au lieu de chercher
+un autre run. Un lancement manuel (« Run workflow ») sert aux contrôles
+ponctuels mais ne remplace pas ce run pour la release.
+
+Commit déjà poussé sans le marqueur ? Ajoutez un commit vide marqué plutôt que
+de réécrire l'historique : l'arbre validé reste identique, et c'est ce nouveau
+SHA qui sera empaqueté puis tagué.
+
+```bash
+git commit --allow-empty -m "[PROD] Validate this tree for the release"
+git push origin arena/0adacf84-convertall-py
+bash release_qt6.sh --wait-ci --draft
+```
+
 `tools/build_deb.py` publie ses jalons en annotations (`notice`) et, en cas
 d'échec, une annotation `error` avec l'étape fautive, le message et les
 dernières lignes de trace ; le même texte est écrit dans

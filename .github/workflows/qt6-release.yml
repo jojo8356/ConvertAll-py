@@ -1,5 +1,19 @@
 name: Qt6 release validation
 
+# CI runs only for a commit that carries an explicit release marker, so ordinary
+# commits, checkpoints and documentation pushes stay quiet and never consume
+# runner minutes. The marker goes in the commit message:
+#
+#     git commit -m "[PROD] Prepare the 0.9.1 release"
+#
+# For a pull request the marker is looked up in the title or the head branch.
+# A manual "Run workflow" click always runs the whole matrix, and
+# tools/release_qt6.py (CI_MARKER) refuses to package a SHA that has no green
+# marked push run, so the two definitions cannot drift apart unnoticed.
+#
+# The marker is case sensitive and deliberately not a word that appears by
+# accident: never put it in a routine commit message.
+
 on:
   push:
   pull_request:
@@ -9,12 +23,18 @@ permissions:
   contents: read
 
 concurrency:
-  group: qt6-${{ github.workflow }}-${{ github.ref }}
+  # Quiet pushes get their own group so they can never cancel a marked run.
+  group: qt6-${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'push' && contains(github.event.head_commit.message || '', '[PROD]')) && 'release' || 'quiet' }}
   cancel-in-progress: true
 
 jobs:
   tests:
     name: Tests ${{ matrix.os }} / Python ${{ matrix.python }} / Qt6
+    # Release marker gate: without it (see the header comment) this job is skipped.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'push' && contains(github.event.head_commit.message || '', '[PROD]'))
+      || (github.event_name == 'pull_request' && (contains(github.event.pull_request.title || '', '[PROD]') || contains(github.event.pull_request.head.ref || '', '[PROD]')))
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -61,6 +81,11 @@ jobs:
 
   native-deb:
     name: Debian native Qt / ${{ matrix.suite }}
+    # Release marker gate: without it (see the header comment) this job is skipped.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'push' && contains(github.event.head_commit.message || '', '[PROD]'))
+      || (github.event_name == 'pull_request' && (contains(github.event.pull_request.title || '', '[PROD]') || contains(github.event.pull_request.head.ref || '', '[PROD]')))
     runs-on: ubuntu-24.04
     container: debian:${{ matrix.suite }}-slim
     timeout-minutes: 20
@@ -104,6 +129,11 @@ jobs:
   bundle:
     name: Bundle ${{ matrix.os }} / Qt6
     needs: tests
+    # Release marker gate: without it (see the header comment) this job is skipped.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'push' && contains(github.event.head_commit.message || '', '[PROD]'))
+      || (github.event_name == 'pull_request' && (contains(github.event.pull_request.title || '', '[PROD]') || contains(github.event.pull_request.head.ref || '', '[PROD]')))
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:

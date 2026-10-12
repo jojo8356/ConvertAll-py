@@ -61,6 +61,30 @@ Qt5, installateur Unix isolé et archives source reproductibles. Le seuil reste
 La CI teste les quatre versions Python 3.11 à 3.14 sur Linux et Windows et
 construit les deux bundles seulement après réussite de tous les tests.
 
+**La CI ne se déclenche que pour un commit marqué.** Le workflow Qt6 est
+conditionné à la présence de `[PROD]` dans le message de commit (titre ou
+branche pour une pull request) ; les commits ordinaires ne lancent donc aucun
+job et ne consomment pas de minutes. Pour valider un SHA :
+
+```bash
+git commit -m "[PROD] Prepare the 0.9.1 release"
+git push origin arena/0adacf84-convertall-py
+```
+
+`release_qt6.sh --wait-ci --draft` exige un run **push** marqué et vert sur les
+12 jobs de ce SHA exact : un push silencieux, un run en échec ou un lancement
+manuel (« Run workflow », utile pour un contrôle ponctuel) ne suffisent pas.
+Ne jamais mettre ce marqueur dans un commit de routine.
+
+Commit déjà poussé sans le marqueur ? Inutile de réécrire l'historique : un
+commit vide marqué suffit, et c'est ce nouveau SHA (arbre identique) qu'il
+faudra release.
+
+```bash
+git commit --allow-empty -m "[PROD] Validate this tree for the release"
+git push origin arena/0adacf84-convertall-py
+```
+
 ## Release avec exécutables, `.deb` et `.AppImage`
 
 Sur Linux x86_64 Debian/Ubuntu, avec le venv de QA et les outils système prêts :
