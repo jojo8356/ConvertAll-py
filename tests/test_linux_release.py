@@ -238,6 +238,16 @@ def ci_jobs_with(default_conclusion='success'):
             for name in CI_JOB_NAMES]
 
 
+@pytest.fixture
+def fake_clock(monkeypatch):
+    """A clock the polling code advances by sleeping, so tests stay instant."""
+    clock = {'elapsed': 0.0}
+    monkeypatch.setattr(release_qt6.time, 'monotonic', lambda: clock['elapsed'])
+    monkeypatch.setattr(release_qt6.time, 'sleep',
+                        lambda seconds: clock.__setitem__('elapsed', clock['elapsed'] + seconds))
+    return clock
+
+
 def ci_run(run_id, status='completed', conclusion='success'):
     return {'id': run_id, 'head_sha': SHA, 'head_branch': release_qt6.BRANCH,
             'path': release_qt6.WORKFLOW, 'event': 'push', 'status': status,
@@ -287,9 +297,29 @@ def test_select_ci_refuses_a_history_without_a_green_marked_run(monkeypatch):
                         fake_github([ci_run(7)], {7: ci_jobs_with('skipped')}))
     with pytest.raises(ReleaseError, match='twelve green jobs'):
         release_qt6.select_ci(SHA, None, wait=False)
+
+
+def test_select_ci_waits_for_github_to_register_the_push(monkeypatch, fake_clock):
+    """The API answers before the run exists; that must not abort the release."""
+    calls = {'count': 0}
+
+    def github(endpoint, *, missing_ok=False):
+        if '/jobs?per_page=100' in endpoint:
+            return {'jobs': ci_jobs_with()}
+        calls['count'] += 1
+        return {'workflow_runs': [] if calls['count'] == 1 else [ci_run(11)]}
+
+    monkeypatch.setattr(release_qt6, 'github', github)
+    assert release_qt6.select_ci(SHA, None, wait=True)['id'] == 11
+    assert calls['count'] == 2  # it polled instead of giving up on the first empty answer
+
+
+def test_a_missing_run_is_diagnosed_only_after_the_grace_period(monkeypatch, fake_clock):
     monkeypatch.setattr(release_qt6, 'github', fake_github([], {}))
-    with pytest.raises(ReleaseError, match='contains \\[PROD\\]'):
+    with pytest.raises(ReleaseError, match='No CI run for this SHA after'):
         release_qt6.select_ci(SHA, None, wait=False)
+    assert fake_clock['elapsed'] >= release_qt6.CI_REGISTRATION_GRACE
+    assert release_qt6.CI_REGISTRATION_WAIT > release_qt6.CI_REGISTRATION_GRACE > 0
 
 
 def test_select_ci_waits_for_a_pending_run_instead_of_using_an_old_one(monkeypatch):

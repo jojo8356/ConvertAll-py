@@ -18,6 +18,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 from urllib.parse import urlencode
 import xml.etree.ElementTree as ET
 
@@ -32,6 +33,11 @@ WORKFLOW = '.github/workflows/qt6-release.yml'
 # The workflow only runs for a commit carrying this marker in its message, so
 # ordinary commits stay quiet. Both sides must agree; a test pins that.
 CI_MARKER = '[PROD]'
+# A push is not instantly visible in the API: without a grace period the script
+# used to report "no CI run for this SHA" seconds after a push that had worked.
+CI_REGISTRATION_GRACE = 15
+CI_REGISTRATION_WAIT = 60
+CI_POLL_SECONDS = 5
 LOG = None
 
 
@@ -131,6 +137,35 @@ def qualifying_ci_run(candidates, commit):
     return None
 
 
+def discover_ci_run(commit, wait):
+    """Runs of this SHA, tolerating the delay before GitHub registers a push.
+
+    The API answers seconds before the run exists, so polling happens before the
+    "no run" diagnosis, and that diagnosis only appears once the grace period
+    really elapsed. The wait is longer with --wait-ci, which already implies
+    waiting for CI.
+    """
+    query = urlencode({'branch': BRANCH, 'head_sha': commit, 'event': 'push', 'per_page': 100})
+    deadline = time.monotonic() + (CI_REGISTRATION_WAIT if wait else CI_REGISTRATION_GRACE)
+    checks = 0
+    while True:
+        data = github(f'repos/{REPO}/actions/workflows/{Path(WORKFLOW).name}/runs?{query}')
+        candidates = [item for item in data['workflow_runs'] if item['head_sha'] == commit]
+        checks += 1
+        if candidates:
+            return candidates
+        if time.monotonic() >= deadline:
+            raise ReleaseError(
+                f'No CI run for this SHA after {checks} checks and '
+                f'{CI_REGISTRATION_WAIT if wait else CI_REGISTRATION_GRACE}s: GitHub registers a '
+                f'run a few seconds after a push, and CI only runs for a commit whose message '
+                f'contains {CI_MARKER}. Push (or --amend and push) a marked commit, or select an '
+                'existing run with --run-id.')
+        print(f'No CI run registered for this SHA yet ({checks} check(s); GitHub needs a few '
+              f'seconds after a push); checking again in {CI_POLL_SECONDS}s...', flush=True)
+        time.sleep(CI_POLL_SECONDS)
+
+
 def select_ci(commit, run_id, wait):
     if run_id:
         run = github(f'repos/{REPO}/actions/runs/{run_id}')
@@ -143,13 +178,7 @@ def select_ci(commit, run_id, wait):
         validate_ci_run(run, commit)
         validate_ci_jobs(ci_jobs(run['id']))
         return run
-    query = urlencode({'branch': BRANCH, 'head_sha': commit, 'event': 'push', 'per_page': 100})
-    data = github(f'repos/{REPO}/actions/workflows/qt6-release.yml/runs?{query}')
-    candidates = [item for item in data['workflow_runs'] if item['head_sha'] == commit]
-    if not candidates:
-        raise ReleaseError(f'No CI run for this SHA: CI only runs for a commit whose message '
-                           f'contains {CI_MARKER}. Amend the message (git commit --amend) and '
-                           'push, or select an existing run with --run-id.')
+    candidates = discover_ci_run(commit, wait)
     run = qualifying_ci_run(candidates, commit)
     if run is None and wait:
         pending = next((item for item in candidates if item.get('status') != 'completed'), None)

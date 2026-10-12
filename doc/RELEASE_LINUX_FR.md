@@ -144,7 +144,11 @@ git commit -m "[PROD] Prepare the 0.9.1 release"
 git push origin arena/0adacf84-convertall-py
 ```
 
-Deux conséquences pratiques : les push silencieux ne peuvent ni remplacer ni
+GHub met quelques secondes à enregistrer un run après un push : le script
+interroge l'API jusqu'à 15 s (60 s avec `--wait-ci`) avant de conclure qu'aucun
+run n'existe, il n'y a donc rien à relancer ni à re-pousser dans ce délai.
+
+Trois conséquences pratiques : les push silencieux ne peuvent ni remplacer ni
 annuler un run marqué (groupes de concurrence séparés), et
 `release_qt6.py` refuse de préparer un SHA sans run **push** marqué dont les
 12 jobs sont verts — il l'explique et rappelle le marqueur au lieu de chercher

@@ -76,6 +76,10 @@ git push origin arena/0adacf84-convertall-py
 manuel (« Run workflow », utile pour un contrôle ponctuel) ne suffisent pas.
 Ne jamais mettre ce marqueur dans un commit de routine.
 
+GitHub enregistre un run quelques secondes après le push : le script attend
+jusqu'à 15 s (60 s avec `--wait-ci`) avant d'annoncer qu'aucun run n'existe, et
+le lancer juste après le push ne produit donc plus de faux « No CI run ».
+
 Commit déjà poussé sans le marqueur ? Inutile de réécrire l'historique : un
 commit vide marqué suffit, et c'est ce nouveau SHA (arbre identique) qu'il
 faudra release.
