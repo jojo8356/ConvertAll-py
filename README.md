@@ -91,7 +91,19 @@ git push origin arena/0adacf84-convertall-py
 
 ## Release avec exécutables, `.deb` et `.AppImage`
 
-Sur Linux x86_64 Debian/Ubuntu, avec le venv de QA et les outils système prêts :
+Tout se répète **en local d'abord**, sans CI et sans rien publier :
+
+```bash
+bash test_all_qt6.sh                 # étapes 1-2 : tests, couverture, bundle PyInstaller
+bash release_qt6.sh --local-only     # étapes 1-4 : + portable, .deb léger, AppImage
+```
+
+`--local-only` produit les mêmes assets et un rapport `local-rehearsal.json`,
+saute les étapes 5-7 (les `.exe` Windows viennent de la CI) et refuse `--draft` :
+une répétition ne peut pas devenir une publication.
+
+Ensuite seulement, la vraie release, sur Linux x86_64 Debian/Ubuntu, avec le
+venv de QA et les outils système prêts :
 
 ```bash
 bash release_qt6.sh --wait-ci --draft

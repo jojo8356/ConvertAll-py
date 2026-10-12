@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+from types import SimpleNamespace
 import struct
 import subprocess
 import tarfile
@@ -284,6 +285,37 @@ def test_ci_runs_only_for_the_configured_release_marker():
     assert "'release' || 'quiet'" in workflow
     for document in ('README.md', 'doc/RELEASE_LINUX_FR.md'):
         assert marker in (ROOT / document).read_text(encoding='utf-8'), document
+
+
+def test_a_local_rehearsal_never_asks_for_a_ci_run_or_a_release(monkeypatch):
+    """Rehearsing the local steps must not require CI, and must never publish."""
+    def forbidden(*arguments, **kwargs):
+        raise AssertionError('a rehearsal must not select a CI run')
+
+    monkeypatch.setattr(release_qt6, 'select_ci', forbidden)
+    args = SimpleNamespace(local_only=True, draft=False, run_id=None, wait_ci=False)
+    assert release_qt6.requested_ci_run(args, SHA) is None
+
+
+@pytest.mark.parametrize('option', ['draft', 'run_id', 'wait_ci'])
+def test_a_local_rehearsal_refuses_release_only_options(option):
+    args = SimpleNamespace(local_only=True, draft=False, run_id=None, wait_ci=False)
+    setattr(args, option, True if option == 'draft' else (7 if option == 'run_id' else True))
+    with pytest.raises(ReleaseError, match='rehearsal'):
+        release_qt6.requested_ci_run(args, SHA)
+
+
+def test_a_real_release_still_goes_through_select_ci(monkeypatch):
+    calls = []
+
+    def fake_select(commit, run_id, wait):
+        calls.append((commit, run_id, wait))
+        return {'id': 5}
+
+    monkeypatch.setattr(release_qt6, 'select_ci', fake_select)
+    args = SimpleNamespace(local_only=False, draft=True, run_id=None, wait_ci=True)
+    assert release_qt6.requested_ci_run(args, SHA) == {'id': 5}
+    assert calls == [(SHA, None, True)]
 
 
 def test_select_ci_skips_a_quiet_run_even_when_it_is_reported_successful(monkeypatch):

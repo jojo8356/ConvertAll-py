@@ -174,6 +174,17 @@ def discover_ci_run(commit, wait):
         time.sleep(CI_POLL_SECONDS)
 
 
+def requested_ci_run(args, commit):
+    """The CI run a real release needs, or None for a local rehearsal only."""
+    if args.local_only:
+        if args.draft or args.run_id or args.wait_ci:
+            raise ReleaseError('--local-only is a rehearsal: it cannot select or wait for a CI '
+                               'run, and it never creates a tag or a release. Drop those options '
+                               'to rehearse, or drop --local-only to release.')
+        return None
+    return select_ci(commit, args.run_id, args.wait_ci)
+
+
 def select_ci(commit, run_id, wait):
     if run_id:
         run = github(f'repos/{REPO}/actions/runs/{run_id}')
@@ -724,7 +735,11 @@ def build_release(args):
         raise ReleaseError(f'{tag} already targets another SHA. Never retarget it; choose a new version.')
     if args.draft and github(f'repos/{REPO}/releases/tags/{tag}', missing_ok=True) is not None:
         raise ReleaseError(f'Release {tag} already exists. No overwrite/clobber is performed.')
-    run = select_ci(commit, args.run_id, args.wait_ci)
+    if run is None:
+        print('LOCAL REHEARSAL: no CI gate, no tag and no release are involved. The real release '
+              f'still requires a push whose message contains {CI_MARKER} and all twelve CI jobs '
+              'green.', flush=True)
+    run = requested_ci_run(args, commit)
     if args.resume is None:
         stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + f'-{os.getpid()}'
         work = ROOT / 'build/qt6-release' / stamp
@@ -743,7 +758,8 @@ def build_release(args):
                    'QT_QPA_PLATFORM': 'offscreen', 'PYTHONIOENCODING': 'utf-8'}
     for key in ('APPDIR', 'APPIMAGE', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH'):
         environment.pop(key, None)
-    print(f'SHA={commit}\nCI={run["html_url"]}\nAssets={assets}', flush=True)
+    print(f'SHA={commit}\nCI={run["html_url"] if run else "none (local rehearsal)"}'
+          f'\nAssets={assets}', flush=True)
 
     print('\n[1/7] Full local source QA (clean SHA, pinned profile, coverage)', flush=True)
     if resumed:
@@ -784,7 +800,7 @@ def build_release(args):
         info = json.loads((bundle / 'RELEASE-INFO.json').read_text(encoding='utf-8'))
         if info.get('version') != version or info.get('source_commit') != commit:
             raise ReleaseError('The reused bundle is not bound to this SHA/version')
-        if info.get('ci_run') != run['id']:
+        if run is not None and info.get('ci_run') != run['id']:
             raise ReleaseError(f'The reused bundle is bound to CI run {info.get("ci_run")}, but '
                                f'run {run["id"]} was selected; drop --resume, or pass --run-id '
                                f'{info.get("ci_run")}')
@@ -810,9 +826,9 @@ def build_release(args):
                          / f'python{sys.version_info.major}.{sys.version_info.minor}' / 'copyright')
         if python_notice.is_file():
             shutil.copyfile(python_notice, bundle / 'doc/third-party/CPython-copyright')
-        info = {'version': version, 'source_commit': commit, 'ci_run': run['id'],
-                'architecture': 'x86_64', 'glibc_required': glibc,
-                'runtime': base_report['runtime']}
+        info = {'version': version, 'source_commit': commit,
+                'ci_run': run['id'] if run else None, 'architecture': 'x86_64',
+                'glibc_required': glibc, 'runtime': base_report['runtime']}
         packages.write_file(bundle / 'RELEASE-INFO.json', json.dumps(info, indent=2) + '\n')
 
     print('\n[3/7] Portable executable archive and Debian package', flush=True)
@@ -943,6 +959,25 @@ def build_release(args):
     checks['appimage_apprun'] = check_launch(extracted_app / 'AppRun', 'appimage-apprun', work,
                                             environment, version, bundle=extracted_app / 'usr/lib/convertall')
 
+    if run is None:
+        print('\n[5/7] Skipped: the Windows executables and the source archive come from CI, and '
+              'this is a local rehearsal.', flush=True)
+        print('[6/7] Skipped: provenance/notes describe a real release.', flush=True)
+        print('[7/7] Skipped: no tag and no release are created by a rehearsal.', flush=True)
+        rehearsal = {'status': 'PASS', 'source_commit': commit, 'ci_run': None,
+                     'warning': 'NOT a release: local rehearsal only, no CI gate',
+                     'checks': checks, 'source_tests': tests,
+                     'assets': {path.name: {'sha256': packages.sha256(path),
+                                            'bytes': path.stat().st_size}
+                                for path in sorted(assets.iterdir()) if path.is_file()}}
+        report = assets / 'local-rehearsal.json'
+        packages.write_file(report, json.dumps(rehearsal, indent=2, ensure_ascii=False) + '\n')
+        print(f'\nRehearsal PASS: bundle, portable, .deb and AppImage checks ran locally.\n'
+              f'Assets: {assets}\nReport: {report}\nLog: {LOG}\n'
+              'Nothing was tagged or published: the real release still needs a marked push with '
+              'all twelve CI jobs green (bash release_qt6.sh --wait-ci --draft).', flush=True)
+        return assets
+
     print('\n[5/7] Exact CI source archive and Windows executables (complete onedir ZIP)', flush=True)
     source_input = work / 'ci-source'
     download_artifact(run['id'], f'qt6-source-{commit}', source_input)
@@ -1052,6 +1087,9 @@ def main():
     parser.add_argument('--draft', action='store_true', help='create a non-published GitHub draft after all checks')
     parser.add_argument('--wait-ci', action='store_true', help='wait for the current SHA CI before local builds')
     parser.add_argument('--run-id', type=int, help='use this exact successful CI push run (same SHA required)')
+    parser.add_argument('--local-only', action='store_true',
+                        help='rehearsal: run the local steps (bundle, portable, .deb, AppImage) '
+                             'without a CI run, and never create a tag or a release')
     parser.add_argument('--resume', nargs='?', const='latest', metavar='STAMP',
                         help='reuse the re-verified artifacts of an earlier run of this exact '
                              'SHA (default: the most recent run) instead of rebuilding steps 1-3')

@@ -56,7 +56,49 @@ PyQt6 provenant d'un venv ou de `/usr/local`, même s'il a la bonne version.
 Le champ Debian Maintainer est public et vient de l'identité Git locale ;
 utiliser `--maintainer 'Nom <adresse>'` pour choisir une autre identité.
 
-## 3. Construire et créer le draft 0.9.1
+## 3. Tout tester en local avant la release (répétition)
+
+Deux commandes suffisent, et **aucune ne consomme de CI ni ne publie quoi que
+ce soit** :
+
+```bash
+bash test_all_qt6.sh                 # étapes 1-2 : venv, 4600+ tests, bundle PyInstaller
+bash release_qt6.sh --local-only     # étapes 1-4 : + archive portable, .deb léger, AppImage
+```
+
+`--local-only` est une répétition : elle exige un arbre propre et le profil
+épinglé, produit les mêmes assets dans `dist/qt6-release/<sha>-<stamp>/`,
+écrit `local-rehearsal.json`, et **saute les étapes 5-7** (les `.exe` Windows et
+l'archive source viennent de la CI, et il n'y a ni tag ni brouillon). Elle refuse
+`--draft`, `--run-id` et `--wait-ci`, pour qu'une répétition ne puisse jamais
+devenir une publication. Une fois la répétition verte, la vraie release reste
+inchangée : commit marqué, push, `bash release_qt6.sh --wait-ci --draft`.
+
+Pour rejouer seulement la fin d'une répétition qui a échoué (mêmes garanties que
+pour une vraie release : chaque hash enregistré est revérifié) :
+
+```bash
+bash release_qt6.sh --local-only --resume
+```
+
+### Vérifier les assets à la main
+
+```bash
+ASSETS=$(ls -dt dist/qt6-release/* | head -1)
+
+tar -xzf "$ASSETS"/ConvertAll-0.9.1-qt6-linux-x86_64.tar.gz -C /tmp/portable
+/tmp/portable/ConvertAll-0.9.1-qt6-linux-x86_64/convertall --test-all
+
+dpkg-deb -c "$ASSETS"/convertall_0.9.1-1_all.deb | head -20
+sudo apt install "$ASSETS"/convertall_0.9.1-1_all.deb      # dans une VM de préférence
+
+# AppImage : sans FUSE, et sans passer par un intergiciel binfmt
+TOOLS=build/qt6-release/*/appimage-tools/runtime-x86_64
+TARGET_APPIMAGE="$PWD/$ASSETS"/ConvertAll-0.9.1-x86_64.AppImage \
+  $(ls $TOOLS | head -1) --appimage-extract-and-run --runtime-info
+```
+
+## 4. Construire et créer le draft 0.9.1
 
 ```bash
 set -euo pipefail
@@ -127,7 +169,7 @@ est refusé (message « drop --resume to rebuild everything ») : les binaires
 seraient périmés pour ce SHA. Les outils AppImage déjà téléchargés sont réutilisés
 après re-vérification de leur SHA-256 épinglé, jamais sans contrôle.
 
-## 4. Contrôles CI et diagnostic des échecs
+## 5. Contrôles CI et diagnostic des échecs
 
 La CI Qt6 doit être verte sur **12 jobs** pour le SHA exact avant tout tag. Les
 jobs `Debian native Qt / bookworm|trixie` valident le `.deb` léger avec le
@@ -172,7 +214,7 @@ dernières lignes de trace ; le même texte est écrit dans
 Ainsi `gh api .../check-runs/<id>/annotations` suffit à diagnostiquer un échec
 même quand les logs et artefacts ne sont pas téléchargeables.
 
-## 5. AppImage verrouillée
+## 6. AppImage verrouillée
 
 `tools/appimage-lock.json` conserve IDs et SHA-256 du builder et du runtime.
 Le builder utilise explicitement le runtime épinglé et **zstd**, seul
@@ -238,7 +280,7 @@ pas un contournement : seuls les octets décrits par les pins sont exécutés, e
 un échec total affiche la taille, le SHA-256 relu et le pin attendu. Si les
 `WARNING` persistent, déplacer le clone sur un disque local.
 
-## 6. Installer et publier séparément
+## 7. Installer et publier séparément
 
 Dans une VM Debian/Ubuntu dédiée, après checksums :
 
