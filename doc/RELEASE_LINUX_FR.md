@@ -58,8 +58,25 @@ utiliser `--maintainer 'Nom <adresse>'` pour choisir une autre identité.
 
 ## 3. Tout tester en local avant la release (répétition)
 
-Deux commandes suffisent, et **aucune ne consomme de CI ni ne publie quoi que
-ce soit** :
+### D'abord le mainteneur du `.deb` (une seule fois par shell)
+
+Le champ `Maintainer` du paquet publié est vérifié **avant** toute commande
+longue. Renseignez-le une fois :
+
+```bash
+export CONVERTALL_MAINTAINER="Your Name <you@example.com>"
+```
+
+Sans cette variable, `--maintainer "Name <email>"` fait la même chose, et à
+défaut l'identité git locale est utilisée — mais seulement si elle est réellement
+configurée (`git config --global user.name` / `user.email`). Un `git commit`
+réussit même sans identité configurée : Git invente alors `login@machine`, une
+adresse que ce script refuse de publier. C'est exactement ce qui a stoppé la
+première tentative 0.9.1 (`Set --maintainer …`).
+
+### Ensuite les deux commandes
+
+Elles suffisent, et **aucune ne consomme de CI ni ne publie quoi que ce soit** :
 
 ```bash
 bash test_all_qt6.sh                 # étapes 1-2 : venv, 4600+ tests, bundle PyInstaller
@@ -102,9 +119,13 @@ TARGET_APPIMAGE="$PWD/$ASSETS"/ConvertAll-0.9.1-x86_64.AppImage \
 
 ```bash
 set -euo pipefail
+export CONVERTALL_MAINTAINER="Your Name <you@example.com>"   # si pas déjà exporté
 git pull --ff-only origin arena/0adacf84-convertall-py
 bash release_qt6.sh --wait-ci --draft
 ```
+
+`--resume` reprend la même variable d'environnement (ou `--maintainer`), donc un
+seul export couvre la release, une reprise et une répétition.
 
 Le lanceur exige la CI du SHA actuel : huit tests Ubuntu/Windows × Python
 3.11–3.14, deux bundles et deux jobs **Debian native Qt / bookworm et trixie**.
@@ -202,6 +223,7 @@ de réécrire l'historique : l'arbre validé reste identique, et c'est ce nouvea
 SHA qui sera empaqueté puis tagué.
 
 ```bash
+export CONVERTALL_MAINTAINER="Your Name <you@example.com>"   # une fois par shell (§3)
 git commit --allow-empty -m "[PROD] Validate this tree for the release"
 git push origin arena/0adacf84-convertall-py
 bash release_qt6.sh --wait-ci --draft

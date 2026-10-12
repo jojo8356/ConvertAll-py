@@ -287,6 +287,50 @@ def test_ci_runs_only_for_the_configured_release_marker():
         assert marker in (ROOT / document).read_text(encoding='utf-8'), document
 
 
+def test_a_maintainer_can_be_exported_once_for_every_run(monkeypatch):
+    """One export must cover the release, a --resume and a rehearsal."""
+    monkeypatch.setenv('CONVERTALL_MAINTAINER', '  Env Person <env@example.org>  ')
+    assert release_qt6.maintainer_identity(None) == 'Env Person <env@example.org>'
+    # The flag stays the most explicit source.
+    assert release_qt6.maintainer_identity('Flag <flag@example.org>') == 'Flag <flag@example.org>'
+    # An all-whitespace variable must not shadow the git identity.
+    def configured(arguments, **kwargs):
+        value = 'Git Person' if 'user.name' in arguments else 'git@example.org'
+        return subprocess.CompletedProcess(arguments, 0, value + '\n', '')
+
+    monkeypatch.setattr(release_qt6.subprocess, 'run', configured)
+    assert (release_qt6.maintainer_identity(None, {'CONVERTALL_MAINTAINER': '   '})
+            == 'Git Person <git@example.org>')
+
+
+def test_a_missing_maintainer_says_exactly_what_to_do(monkeypatch):
+    """The failure that stopped the 0.9.1 release must be self-explaining."""
+    monkeypatch.delenv('CONVERTALL_MAINTAINER', raising=False)
+
+    def no_identity(*arguments, **kwargs):
+        return subprocess.CompletedProcess(arguments, 1, '', '')
+
+    monkeypatch.setattr(release_qt6.subprocess, 'run', no_identity)
+    with pytest.raises(ReleaseError) as failure:
+        release_qt6.maintainer_identity(None)
+    message = str(failure.value)
+    for pointer in ('--maintainer "Name <email>"', 'CONVERTALL_MAINTAINER',
+                    'git config --global user.email',
+                    'bash release_qt6.sh --wait-ci --draft --maintainer'):
+        assert pointer in message, pointer
+
+
+def test_a_configured_git_identity_still_becomes_the_debian_maintainer(monkeypatch):
+    monkeypatch.delenv('CONVERTALL_MAINTAINER', raising=False)
+
+    def configured(arguments, **kwargs):
+        value = 'Silent Person' if 'user.name' in arguments else 'silent@example.org'
+        return subprocess.CompletedProcess(arguments, 0, value + '\n', '')
+
+    monkeypatch.setattr(release_qt6.subprocess, 'run', configured)
+    assert release_qt6.maintainer_identity(None) == 'Silent Person <silent@example.org>'
+
+
 def test_a_local_rehearsal_never_asks_for_a_ci_run_or_a_release(monkeypatch):
     """Rehearsing the local steps must not require CI, and must never publish."""
     def forbidden(*arguments, **kwargs):

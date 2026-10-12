@@ -629,9 +629,21 @@ def ascii_tree(root, destination):
     return destination
 
 
-def maintainer_identity(provided):
+MAINTAINER_VARIABLE = 'CONVERTALL_MAINTAINER'
+
+
+def maintainer_identity(provided, environment=None):
+    """Public .deb Maintainer field: flag, then environment, then local git identity.
+
+    Git happily invents 'user@machine' for a commit when no identity is configured,
+    but that value is never written to the configuration and is a poor public
+    address, so the third source only accepts an identity that is really set."""
     if provided:
         return provided
+    environment = os.environ if environment is None else environment
+    exported = environment.get(MAINTAINER_VARIABLE, '').strip()
+    if exported:
+        return exported
     def identity(key):
         result = subprocess.run(['git', 'config', '--get', key], cwd=ROOT,
                                 capture_output=True, text=True, encoding='utf-8', timeout=10)
@@ -640,7 +652,13 @@ def maintainer_identity(provided):
         return result.stdout.strip()
     name, email = identity('user.name'), identity('user.email')
     if not name or not email:
-        raise ReleaseError('Set --maintainer "Name <email>" (public .deb metadata)')
+        raise ReleaseError(
+            'No public .deb maintainer. Pass --maintainer "Name <email>", or export '
+            f'{MAINTAINER_VARIABLE}="Name <email>", or set one identity once with '
+            '"git config --global user.name" and "git config --global user.email". '
+            'A commit can succeed without those, but a published Debian package must name '
+            'a real address, so the release refuses to guess one. Example:\n'
+            '  bash release_qt6.sh --wait-ci --draft --maintainer "Your Name <you@example.com>"')
     return f'{name} <{email}>'
 
 
@@ -1093,7 +1111,8 @@ def main():
     parser.add_argument('--resume', nargs='?', const='latest', metavar='STAMP',
                         help='reuse the re-verified artifacts of an earlier run of this exact '
                              'SHA (default: the most recent run) instead of rebuilding steps 1-3')
-    parser.add_argument('--maintainer', help='public .deb Maintainer: "Name <email>"; default: local git identity')
+    parser.add_argument('--maintainer', help='public .deb Maintainer: "Name <email>"; default: '
+                        f'${MAINTAINER_VARIABLE}, then the configured git identity')
     args = parser.parse_args()
     try:
         build_release(args)

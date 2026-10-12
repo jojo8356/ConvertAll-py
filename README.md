@@ -91,6 +91,14 @@ git push origin arena/0adacf84-convertall-py
 
 ## Release avec exécutables, `.deb` et `.AppImage`
 
+Le `.deb` publié nomme un mainteneur : exportez-le **une fois** dans votre shell,
+sinon le script s'arrête immédiatement (un commit réussit sans identité git, mais
+un paquet public ne peut pas en inventer une) :
+
+```bash
+export CONVERTALL_MAINTAINER="Your Name <you@example.com>"   # ou --maintainer "…"
+```
+
 Tout se répète **en local d'abord**, sans CI et sans rien publier :
 
 ```bash
