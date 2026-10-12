@@ -8,6 +8,7 @@ import shutil
 from types import SimpleNamespace
 import struct
 import subprocess
+import sys
 import tarfile
 import zipfile
 
@@ -285,6 +286,58 @@ def test_ci_runs_only_for_the_configured_release_marker():
     assert "'release' || 'quiet'" in workflow
     for document in ('README.md', 'doc/RELEASE_LINUX_FR.md'):
         assert marker in (ROOT / document).read_text(encoding='utf-8'), document
+
+
+class _StopAfterPreflight(Exception):
+    """Sentinel: the flow under test must not go any further than the preflight."""
+
+
+class _PinnedBuildTools:
+    """PyInstaller is only installed in the release venv, never in the QA one."""
+
+    versions = {'PyInstaller': '6.22.3', 'pyinstaller-hooks-contrib': '2026.8'}
+
+    @staticmethod
+    def version(name):
+        return _PinnedBuildTools.versions[name]
+
+
+def _preflight_stubs(monkeypatch, stopped):
+    """Everything build_release reads before it stops being cheap: no network, no
+    host tooling and no work directory, so the test only exercises control flow."""
+    monkeypatch.setattr(release_qt6, 'require_clean_sha', lambda commit=None: SHA)
+    monkeypatch.setattr(release_qt6, 'tag_target', lambda tag: None)
+    monkeypatch.setattr(release_qt6, 'command', lambda *arguments, **kwargs: None)
+    monkeypatch.setattr(release_qt6.shutil, 'which', lambda name: '/usr/bin/' + name)
+    monkeypatch.setattr(release_qt6, 'metadata', _PinnedBuildTools)
+    monkeypatch.setattr(release_qt6, 'previous_run', stopped)
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason='build_release is Linux-only')
+def test_a_local_rehearsal_survives_its_own_preflight(monkeypatch, capsys):
+    """Regression: the rehearsal banner once ran before `run` was assigned, so every
+    release died with UnboundLocalError before it could even ask for a maintainer."""
+    _preflight_stubs(monkeypatch, _stop_during_preflight)
+    args = SimpleNamespace(local_only=True, draft=False, run_id=None, wait_ci=False,
+                           maintainer='Rehearsal Person <rehearsal@example.org>', resume='latest')
+    with pytest.raises(_StopAfterPreflight):
+        release_qt6.build_release(args)
+    assert 'LOCAL REHEARSAL' in capsys.readouterr().out
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason='build_release is Linux-only')
+def test_a_real_release_still_names_its_ci_run(monkeypatch, capsys):
+    monkeypatch.setattr(release_qt6, 'select_ci', lambda commit, run_id, wait: {'id': 7})
+    _preflight_stubs(monkeypatch, _stop_during_preflight)
+    args = SimpleNamespace(local_only=False, draft=False, run_id=None, wait_ci=True,
+                           maintainer='Release Person <release@example.org>', resume='latest')
+    with pytest.raises(_StopAfterPreflight):
+        release_qt6.build_release(args)
+    assert 'LOCAL REHEARSAL' not in capsys.readouterr().out
+
+
+def _stop_during_preflight(*arguments, **kwargs):
+    raise _StopAfterPreflight()
 
 
 def test_a_maintainer_can_be_exported_once_for_every_run(monkeypatch):

@@ -753,11 +753,12 @@ def build_release(args):
         raise ReleaseError(f'{tag} already targets another SHA. Never retarget it; choose a new version.')
     if args.draft and github(f'repos/{REPO}/releases/tags/{tag}', missing_ok=True) is not None:
         raise ReleaseError(f'Release {tag} already exists. No overwrite/clobber is performed.')
+    # Decide before anything reads `run`: a rehearsal resolves no CI run at all.
+    run = requested_ci_run(args, commit)
     if run is None:
         print('LOCAL REHEARSAL: no CI gate, no tag and no release are involved. The real release '
               f'still requires a push whose message contains {CI_MARKER} and all twelve CI jobs '
               'green.', flush=True)
-    run = requested_ci_run(args, commit)
     if args.resume is None:
         stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + f'-{os.getpid()}'
         work = ROOT / 'build/qt6-release' / stamp
