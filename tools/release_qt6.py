@@ -989,6 +989,11 @@ def build_release(args):
              f'Portable/AppImage minimum ELF GLIBC requirement detected: **{glibc}**. '
              'This does not apply to the source-only .deb: apt manages its shared runtime.\n'
              'Desktop/graphics system libraries are still required; not universal Linux compatibility.\n'
+             'AppImage note: the payload is zstd-compressed (the pinned builder offers no other '
+             'codec) and AppImageLauncher (last release 2019) cannot read zstd AppImages, so with '
+             "it installed the double-click fails with \"This doesn't look like a squashfs "
+             'image\". Those users should use the portable tarball or the .deb, or stop the '
+             'AppImageLauncher daemon.\n'
              'Portable/AppImage and native Debian runtime, conversions, 7 catalogues and offscreen GUI passed locally.\n'
              'Debian native Qt regressions/package checks passed in Bookworm and Trixie CI.\n'
              'SHA256SUMS and JSON reports bind these assets to the source/CI/build host.\n\n'

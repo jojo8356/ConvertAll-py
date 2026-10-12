@@ -209,7 +209,20 @@ sont diagnostiquées automatiquement :
    `release-provenance.json` et une section « AppImage acceptance required »
    dans les notes le rappellent : un double-clic réel doit être confirmé avant
    de publier Latest. Pour tester en direct :
-   `sudo systemctl stop appimagelauncherd`.
+
+   ```bash
+   sudo systemctl stop appimagelauncherd
+   echo -1 | sudo tee /proc/sys/fs/binfmt_misc/appimage-type1
+   echo -1 | sudo tee /proc/sys/fs/binfmt_misc/appimage-type2
+   ```
+
+   **Conséquence pour les utilisateurs** : AppImageLauncher (dernière version
+   2019, enregistré comme `appimage-type1`/`appimage-type2`) ne sait pas lire le
+   zstd ; sur un poste qui l'a installé, le double-clic d'une AppImage correcte
+   échoue en « This doesn't look like a squashfs image », et l'intergiciel peut
+   même **bloquer** le processus au lieu d'échouer. Le `.deb` et l'archive
+   portable ne sont pas concernés, et les notes de version générées portent
+   désormais cet avertissement en clair.
 
 L'auto-extraction lit `/proc/self/exe` à l'offset calculé depuis la table des
 sections ELF : certains montages (dossiers synchronisés ou nuagiques, clone
