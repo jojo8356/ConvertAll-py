@@ -687,10 +687,12 @@ def test_a_broken_local_copy_does_not_end_the_fallback(monkeypatch, tmp_path):
 def test_a_command_timeout_is_a_release_error_not_an_abort(monkeypatch):
     """A hanging AppImage check must fall through to the next layer, not kill the run."""
     def timing_out(*arguments, **kwargs):
-        raise subprocess.TimeoutExpired(cmd='hanging', timeout=180)
+        raise subprocess.TimeoutExpired(cmd='hanging', timeout=kwargs.get('timeout'))
     monkeypatch.setattr(release_qt6.subprocess, 'run', timing_out)
-    with pytest.raises(ReleaseError, match='timed out after 180s'):
-        release_qt6.command(['/some/hanging/AppRun', '--runtime-info'])
+    # The timeout is passed explicitly: asserting the default (1800s) would pin a
+    # number no caller uses, which is how this test first failed on CI.
+    with pytest.raises(ReleaseError, match='timed out after 180s: /some/hanging/AppRun'):
+        release_qt6.command(['/some/hanging/AppRun', '--runtime-info'], timeout=180)
 
 
 def test_an_intercepted_appimage_skips_the_layers_that_run_it():

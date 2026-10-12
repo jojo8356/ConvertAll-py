@@ -121,7 +121,8 @@ def watch_ci(run):
     try:
         command(['gh', 'run', 'watch', str(run['id']), '--repo', REPO, '--exit-status'])
     except ReleaseError as error:
-        print(f'WARNING: {error}', flush=True)
+        print(f'WARNING: {error}\nWARNING: that run did not succeed; its real status is read '
+              'from the API below instead of being guessed from the watch command.', flush=True)
     return github(f'repos/{REPO}/actions/runs/{run["id"]}')
 
 
@@ -190,7 +191,12 @@ def select_ci(commit, run_id, wait):
     if run is None and wait:
         pending = next((item for item in candidates if item.get('status') != 'completed'), None)
         if pending is not None:
-            run = qualifying_ci_run([watch_ci(pending), *candidates], commit)
+            watch_ci(pending)
+            # The dictionaries read before the wait are stale now: re-read the list
+            # so the diagnosis reports the conclusions GitHub actually has instead of
+            # the "queued" status from before the wait.
+            candidates = discover_ci_run(commit, wait=False)
+            run = qualifying_ci_run(candidates, commit)
     if run is None:
         found = ', '.join(f'{item["id"]}={item.get("status")}/{item.get("conclusion")}'
                           for item in candidates[:5])
