@@ -45,8 +45,15 @@ def command(arguments, *, cwd=ROOT, env=None, timeout=1800, quiet=False):
     arguments = list(map(str, arguments))
     if not quiet:
         print('+ ' + ' '.join(arguments), flush=True)
-    result = subprocess.run(arguments, cwd=cwd, env=env, timeout=timeout,
-                            capture_output=True, text=True, encoding='utf-8', errors='replace')
+    try:
+        result = subprocess.run(arguments, cwd=cwd, env=env, timeout=timeout,
+                                capture_output=True, text=True, encoding='utf-8',
+                                errors='replace')
+    except subprocess.TimeoutExpired as error:
+        if LOG is not None:
+            with LOG.open('a', encoding='utf-8') as stream:
+                stream.write(f'+ {" ".join(arguments)}\nTIMED OUT after {timeout}s\n')
+        raise ReleaseError(f'Command timed out after {timeout}s: {arguments[0]}') from error
     if LOG is not None:
         with LOG.open('a', encoding='utf-8') as stream:
             stream.write('+ ' + ' '.join(arguments) + '\n' + result.stdout + result.stderr + '\n')
@@ -390,6 +397,20 @@ def local_scratch_copy(path, expected_sha256=None):
                        f'({"; ".join(errors) or "no usable local directory"})')
 
 
+def runtime_launch_plan(handlers):
+    """Layers used to exercise the produced AppImage, most direct first.
+
+    A registered binfmt_misc AppImage handler claims the file before its own
+    runtime can run, so the layers that execute the image as-is are doomed: they
+    failed with a squashfs error on the pinned tool and hung here until the
+    command timeout. They are skipped when such a handler is detected, and the
+    pinned runtime reads the payload instead.
+    """
+    if handlers:
+        return ['pinned runtime']
+    return ['direct', 'local copy', 'pinned runtime']
+
+
 def extract_squashfs_payload(image, destination, *, required, offset, expected_sha256=None):
     """Read the squashfs payload without running the AppImage runtime.
 
@@ -412,7 +433,8 @@ def extract_squashfs_payload(image, destination, *, required, offset, expected_s
     raise ReleaseError(f'no {required} after extracting the payload at offset {offset}')
 
 
-def extract_appimage(image, destination, *, required, expected_sha256=None, runtime=None):
+def extract_appimage(image, destination, *, required, expected_sha256=None, runtime=None,
+                     intercepted=False):
     """Extract an AppImage without FUSE, whatever the work tree filesystem does.
 
     `--appimage-extract` needs no FUSE, but the embedded runtime locates its own
@@ -422,8 +444,10 @@ def extract_appimage(image, destination, *, required, expected_sha256=None, runt
     retried from a verified copy on a local disk, through the pinned standalone
     runtime with TARGET_APPIMAGE (which reads the image by path instead of
     /proc/self/exe), and finally by reading the squashfs payload directly.
-    No step substitutes another binary, and nothing is skipped: every attempt
-    works on the very bytes that the checksum pins describe.
+    No step substitutes another binary, and every attempt works on the very
+    bytes that the checksum pins describe. With `intercepted`, the layers that
+    execute the image are skipped: a binfmt_misc handler makes them useless, and
+    they can hang waiting on that handler.
     """
     image, destination = Path(image), Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
@@ -445,20 +469,26 @@ def extract_appimage(image, destination, *, required, expected_sha256=None, runt
             errors.append(f'{label}: {error}')
             return None
 
-    root = attempt(f'{image} in place', image, destination)
-    if root is not None:
-        return root
-    try:
-        copy = local_scratch_copy(image, expected_sha256)
-    except ReleaseError as error:
-        # No usable local directory: the remaining layers operate on the very
-        # file we already have, so they are still worth trying.
-        errors.append(f'local copy: {error}')
+    if intercepted:
+        # Executing the image is pointless here, and it can hang until the
+        # command timeout: go straight to the layers that never run it.
+        print('Skipping the layers that execute the AppImage itself: a binfmt_misc handler '
+              'intercepts it on this machine.', flush=True)
     else:
-        print(f'WARNING: {" | ".join(errors)}; retrying from {copy}...', flush=True)
-        root = attempt('local copy', copy, copy.parent)
+        root = attempt(f'{image} in place', image, destination)
         if root is not None:
             return root
+        try:
+            copy = local_scratch_copy(image, expected_sha256)
+        except ReleaseError as error:
+            # No usable local directory: the remaining layers operate on the very
+            # file we already have, so they are still worth trying.
+            errors.append(f'local copy: {error}')
+        else:
+            print(f'WARNING: {" | ".join(errors)}; retrying from {copy}...', flush=True)
+            root = attempt('local copy', copy, copy.parent)
+            if root is not None:
+                return root
     if runtime is not None and Path(runtime).is_file() and scratch_directories:
         # TARGET_APPIMAGE makes the runtime operate on a given file, so its own
         # /proc/self/exe lookup is not involved at all.
@@ -827,9 +857,12 @@ def build_release(args):
               'paths it is given below.', flush=True)
     checks['appimage_environment'] = appimage_environment_report(
         [tool_image, runtime, build_dir, assets])
+    # A registered handler claims every AppImage on this machine, so from here on
+    # the layers that execute such a file are skipped instead of hanging.
+    handlers = checks['appimage_environment']['binfmt_misc_appimage_handlers']
     tool_root = extract_appimage(tool_image, build_dir / 'tool-extracted', required='AppRun',
                                 expected_sha256=lock['appimagetool']['sha256'],
-                                runtime=runtime)
+                                runtime=runtime, intercepted=bool(handlers))
     tool = ascii_tree(tool_root, build_dir / 'tool') / 'AppRun'
     appdir = packages.stage_appdir(bundle, build_dir / 'ConvertAll.AppDir', ROOT)
     command(['desktop-file-validate', appdir / 'convertall.desktop'])
@@ -855,28 +888,41 @@ def build_release(args):
     scratch = local_scratch_directories()
     runtime_environment = {**environment, 'TMPDIR': str(scratch[0])} if scratch else environment
     prefix = ('--appimage-extract-and-run',)
+    plan = runtime_launch_plan(handlers)
+    if 'direct' not in plan:
+        print('WARNING: an AppImage binfmt_misc handler (' + ', '.join(handlers)
+              + ') intercepts every AppImage here, so running the built file directly is '
+              'skipped; the pinned runtime reads the very same payload instead.', flush=True)
     launcher, direct_error = 'direct', None
-    try:
-        checks['appimage_runtime'] = check_launch(image, 'appimage-runtime', work,
-                                                  runtime_environment, version, prefix=prefix)
-    except ReleaseError as error:
-        direct_error = str(error)
-        print(f'WARNING: {error}', flush=True)
+    for layer in plan:
         try:
-            print('WARNING: retrying the AppImage runtime check from a verified local copy...',
-                  flush=True)
-            checks['appimage_runtime'] = check_launch(local_scratch_copy(image),
-                                                      'appimage-runtime-local', work,
-                                                      runtime_environment, version, prefix=prefix)
-            launcher = 'verified local copy'
-        except ReleaseError as copy_error:
-            print(f'WARNING: {copy_error}\nWARNING: executing the AppImage is blocked in this '
-                  'environment; retrying the same payload through the pinned runtime with '
-                  'TARGET_APPIMAGE...', flush=True)
-            checks['appimage_runtime'] = check_launch(
-                runtime, 'appimage-runtime-pinned', work,
-                {**runtime_environment, 'TARGET_APPIMAGE': str(image)}, version, prefix=prefix)
-            launcher = 'pinned runtime with TARGET_APPIMAGE'
+            if layer == 'direct':
+                checks['appimage_runtime'] = check_launch(image, 'appimage-runtime', work,
+                                                          runtime_environment, version,
+                                                          prefix=prefix)
+            elif layer == 'local copy':
+                print('WARNING: retrying the AppImage runtime check from a verified local '
+                      'copy...', flush=True)
+                checks['appimage_runtime'] = check_launch(local_scratch_copy(image),
+                                                          'appimage-runtime-local', work,
+                                                          runtime_environment, version,
+                                                          prefix=prefix)
+                launcher = 'verified local copy'
+            else:
+                print('WARNING: executing the AppImage is blocked or hanging in this '
+                      'environment; running the same payload through the pinned runtime with '
+                      'TARGET_APPIMAGE...', flush=True)
+                checks['appimage_runtime'] = check_launch(
+                    runtime, 'appimage-runtime-pinned', work,
+                    {**runtime_environment, 'TARGET_APPIMAGE': str(image)}, version, prefix=prefix)
+                launcher = 'pinned runtime with TARGET_APPIMAGE'
+            break
+        except ReleaseError as error:
+            direct_error = direct_error or str(error)
+            print(f'WARNING: {error}', flush=True)
+    else:
+        raise ReleaseError('The built AppImage could not be exercised at all (every recorded '
+                           'attempt is above); do not publish it without a real desktop test')
     if launcher != 'direct':
         checks['appimage_runtime'] = {**checks['appimage_runtime'], 'launcher': launcher,
                                       'direct_execution_error': direct_error}
@@ -885,7 +931,8 @@ def build_release(args):
               'AppImage binfmt_misc handler (see [appimage] above) and confirm a double-click '
               'launch in the acceptance VM before publishing Latest.', flush=True)
     extracted_app = extract_appimage(image, work / 'appimage-extracted',
-                                     required='usr/lib/convertall', runtime=runtime)
+                                     required='usr/lib/convertall', runtime=runtime,
+                                     intercepted=bool(handlers))
     packages.verify_payload(extracted_app / 'usr/lib/convertall', base_report['bundle_sha256'])
     checks['appimage_apprun'] = check_launch(extracted_app / 'AppRun', 'appimage-apprun', work,
                                             environment, version, bundle=extracted_app / 'usr/lib/convertall')

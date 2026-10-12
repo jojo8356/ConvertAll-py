@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import struct
+import subprocess
 import tarfile
 import zipfile
 
@@ -681,6 +682,44 @@ def test_a_broken_local_copy_does_not_end_the_fallback(monkeypatch, tmp_path):
     assert 'scratch directory cannot hold a verified copy' in message
     if shutil.which('unsquashfs'):  # squashfs-tools is required on release hosts only
         assert 'No squashfs payload' in message
+
+
+def test_a_command_timeout_is_a_release_error_not_an_abort(monkeypatch):
+    """A hanging AppImage check must fall through to the next layer, not kill the run."""
+    def timing_out(*arguments, **kwargs):
+        raise subprocess.TimeoutExpired(cmd='hanging', timeout=180)
+    monkeypatch.setattr(release_qt6.subprocess, 'run', timing_out)
+    with pytest.raises(ReleaseError, match='timed out after 180s'):
+        release_qt6.command(['/some/hanging/AppRun', '--runtime-info'])
+
+
+def test_an_intercepted_appimage_skips_the_layers_that_run_it():
+    """binfmt_misc handlers claimed the pinned tool and hung on the built image."""
+    handlers = {'AppImageLauncher': 'enabled; interpreter /usr/bin/AppImageLauncher'}
+    assert release_qt6.runtime_launch_plan(handlers) == ['pinned runtime']
+    assert release_qt6.runtime_launch_plan({}) == ['direct', 'local copy', 'pinned runtime']
+
+
+def test_intercepted_extraction_never_executes_the_image(monkeypatch, tmp_path):
+    image = tmp_path / 'tool.AppImage'
+    image.write_bytes(b'\x7fELF\x02\x01' + b'x' * 64)
+    runtime = tmp_path / 'runtime-x86_64'
+    runtime.write_bytes(b'\x7fELF\x02\x01' + b'r' * 64)
+    local = tmp_path / 'local-temp'
+    local.mkdir()
+    monkeypatch.setattr(release_qt6, 'local_scratch_directories',
+                        lambda notes=None: [local])
+
+    def fake_command(arguments, *, cwd=None, quiet=False, **kwargs):
+        assert Path(arguments[0]) != image, 'the intercepted image must not be executed'
+        (Path(cwd) / 'squashfs-root').mkdir(parents=True, exist_ok=True)
+        (Path(cwd) / 'squashfs-root/AppRun').write_text('#!/bin/sh\n', encoding='utf-8')
+        return ''
+
+    monkeypatch.setattr(release_qt6, 'command', fake_command)
+    root = release_qt6.extract_appimage(image, tmp_path / 'out', required='AppRun',
+                                        runtime=runtime, intercepted=True)
+    assert (root / 'AppRun').is_file()
 
 
 def test_appimage_extraction_failure_stays_explicit(monkeypatch, tmp_path):
