@@ -404,6 +404,34 @@ def test_payload_extraction_strips_the_elf_prefix(monkeypatch, tmp_path):
     assert (root / 'AppRun').is_file()
 
 
+def test_a_broken_local_copy_does_not_end_the_fallback(monkeypatch, tmp_path):
+    """A scratch directory that cannot hold a verified copy must not stop the layers."""
+    image = tmp_path / 'tool.AppImage'
+    image.write_bytes(b'\x7fELF\x02\x01' + b'x' * 64)
+    local = tmp_path / 'local-temp'
+    local.mkdir()
+    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda notes=None: [local])
+
+    def broken_copy(path, expected_sha256=None):
+        raise ReleaseError('scratch directory cannot hold a verified copy')
+
+    def broken_command(*arguments, **kwargs):
+        raise ReleaseError('Command failed (1): cannot open squashfs image')
+
+    def broken_offset(path):
+        raise ReleaseError('No squashfs payload')
+
+    monkeypatch.setattr(release_qt6, 'local_scratch_copy', broken_copy)
+    monkeypatch.setattr(release_qt6, 'command', broken_command)
+    monkeypatch.setattr(release_qt6, 'appimage_payload_offset', broken_offset)
+    with pytest.raises(ReleaseError) as failure:
+        release_qt6.extract_appimage(image, tmp_path / 'out', required='AppRun')
+    message = str(failure.value)
+    assert 'scratch directory cannot hold a verified copy' in message
+    if shutil.which('unsquashfs'):  # squashfs-tools is required on release hosts only
+        assert 'No squashfs payload' in message
+
+
 def test_appimage_extraction_failure_stays_explicit(monkeypatch, tmp_path):
     image = tmp_path / 'tool.AppImage'
     image.write_bytes(b'\x7fELF\x02\x01' + b'x' * 16)

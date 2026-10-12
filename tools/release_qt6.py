@@ -331,9 +331,15 @@ def extract_appimage(image, destination, *, required, expected_sha256=None, runt
     root = attempt(f'{image} in place', image, destination)
     if root is not None:
         return root
-    for scratch in scratch_directories:
-        print(f'WARNING: {" | ".join(errors)}; retrying from {scratch}...', flush=True)
-        root = attempt('local copy', local_scratch_copy(image, expected_sha256), scratch)
+    try:
+        copy = local_scratch_copy(image, expected_sha256)
+    except ReleaseError as error:
+        # No usable local directory: the remaining layers operate on the very
+        # file we already have, so they are still worth trying.
+        errors.append(f'local copy: {error}')
+    else:
+        print(f'WARNING: {" | ".join(errors)}; retrying from {copy}...', flush=True)
+        root = attempt('local copy', copy, copy.parent)
         if root is not None:
             return root
     if runtime is not None and Path(runtime).is_file() and scratch_directories:
