@@ -138,11 +138,13 @@ sections ELF : certains montages (dossiers synchronisés ou nuagiques, clone
 rangé dans « Téléchargements ») renvoient alors d'autres octets et l'extraction
 échoue en « Failed to open squashfs image ». Dans ce cas le script affiche un
 `WARNING` puis retente, sans jamais changer de binaire : copie vérifiée sur
-disque local (`TMPDIR`, puis `/dev/shm`), puis runtime épinglé via
-`TARGET_APPIMAGE` (lecture par chemin), puis lecture directe du payload avec
-`unsquashfs` (`squashfs-tools` est déjà requis). Le repli n'est pas un
-contournement : seuls les octets décrits par les pins sont exécutés, et un
-échec total affiche la taille, le SHA-256 relu et le pin attendu. Si les
+disque local (`TMPDIR`, puis `/dev/shm`, en écartant les montages `noexec`),
+puis runtime épinglé via `TARGET_APPIMAGE` (lecture par chemin), puis lecture
+directe du payload avec `unsquashfs` (`squashfs-tools` est déjà requis). La
+vérification runtime de l'AppImage produite reçoit en plus un `TMPDIR` vérifié,
+car le runtime s'y décompresse avant d'exécuter l'application. Le repli n'est
+pas un contournement : seuls les octets décrits par les pins sont exécutés, et
+un échec total affiche la taille, le SHA-256 relu et le pin attendu. Si les
 `WARNING` persistent, déplacer le clone sur un disque local.
 
 ## 6. Installer et publier séparément

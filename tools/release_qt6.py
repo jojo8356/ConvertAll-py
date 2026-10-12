@@ -208,8 +208,29 @@ def appimage_payload_offset(path):
     return offset
 
 
-def local_scratch_directories():
-    """Private temporary directories on a local disk (TMPDIR, then tmpfs)."""
+def directory_can_execute(directory):
+    """Writable is not enough: a noexec mount can hold files it cannot run.
+
+    The AppImage tool and runtime are executed from the scratch directory, so a
+    candidate that only accepts writes is worse than useless there.
+    """
+    if os.name != 'posix':
+        return True
+    probe = Path(directory) / 'exec-probe'
+    try:
+        probe.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
+        probe.chmod(0o755)
+        result = subprocess.run([probe], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, timeout=60, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    finally:
+        probe.unlink(missing_ok=True)
+    return result.returncode == 0
+
+
+def local_scratch_directories(notes=None):
+    """Private temporary directories that can also execute what they hold."""
     candidates = [{}]
     shared_memory = Path('/dev/shm')
     if shared_memory.is_dir() and os.access(shared_memory, os.W_OK):
@@ -218,10 +239,16 @@ def local_scratch_directories():
     for arguments in candidates:
         try:
             directory = Path(tempfile.mkdtemp(prefix='convertall-appimage-', **arguments))
-        except OSError:
+        except OSError as error:
+            if notes is not None:
+                notes.append(f'{arguments.get("dir", "TMPDIR")}: {error}')
             continue
-        if directory not in directories:
+        if directory in directories:
+            continue
+        if directory_can_execute(directory):
             directories.append(directory)
+        elif notes is not None:
+            notes.append(f'{directory}: files there cannot be executed (noexec mount?)')
     return directories
 
 
@@ -231,7 +258,7 @@ def local_scratch_copy(path, expected_sha256=None):
     if expected_sha256 is None:
         expected_sha256 = packages.sha256(source)
     errors = []
-    for directory in local_scratch_directories():
+    for directory in local_scratch_directories(errors):
         target = directory / source.name
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -243,7 +270,7 @@ def local_scratch_copy(path, expected_sha256=None):
         except (OSError, ReleaseError) as error:
             errors.append(f'{directory}: {error}')
     raise ReleaseError(f'No verified local copy of {source} could be made '
-                       f'({"; ".join(errors)})')
+                       f'({"; ".join(errors) or "no usable local directory"})')
 
 
 def extract_squashfs_payload(image, destination, *, required, offset, expected_sha256=None):
@@ -283,8 +310,8 @@ def extract_appimage(image, destination, *, required, expected_sha256=None, runt
     """
     image, destination = Path(image), Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
-    scratch_directories = local_scratch_directories()
     errors = []
+    scratch_directories = local_scratch_directories(errors)
 
     def extract_with(program, cwd, env=None):
         command([program, '--appimage-extract'], cwd=cwd, env=env, quiet=True)
@@ -525,18 +552,23 @@ def build_release(args):
     command(appimage_command(tool, runtime, appdir, image, lock['compression']),
             env={**environment, 'ARCH': 'x86_64', 'VERSION': version})
     image.chmod(0o755)
-    # First exercise the actual AppImage runtime, not just the uncompressed AppDir:
-    # the runtime reads its own payload through /proc/self/exe, so a work tree on a
-    # synchronised mount is retried from a byte-identical copy on a local disk.
+    # First exercise the actual AppImage runtime, not just the uncompressed AppDir.
+    # The runtime reads its payload through /proc/self/exe and unpacks itself into
+    # TMPDIR, so both are pointed at a verified local directory when one exists, and
+    # a broken work tree is retried from a byte-identical local copy.
+    scratch = local_scratch_directories()
+    runtime_environment = {**environment, 'TMPDIR': str(scratch[0])} if scratch else environment
     try:
-        checks['appimage_runtime'] = check_launch(image, 'appimage-runtime', work, environment,
-                                                  version, prefix=('--appimage-extract-and-run',))
+        checks['appimage_runtime'] = check_launch(image, 'appimage-runtime', work,
+                                                  runtime_environment, version,
+                                                  prefix=('--appimage-extract-and-run',))
     except ReleaseError as error:
         print(f'WARNING: {error}\nWARNING: retrying the AppImage runtime check from a local '
               'copy...', flush=True)
         checks['appimage_runtime'] = check_launch(local_scratch_copy(image),
-                                                  'appimage-runtime-local', work, environment,
-                                                  version, prefix=('--appimage-extract-and-run',))
+                                                  'appimage-runtime-local', work,
+                                                  runtime_environment, version,
+                                                  prefix=('--appimage-extract-and-run',))
     extracted_app = extract_appimage(image, work / 'appimage-extracted',
                                      required='usr/lib/convertall', runtime=runtime)
     packages.verify_payload(extracted_app / 'usr/lib/convertall', base_report['bundle_sha256'])

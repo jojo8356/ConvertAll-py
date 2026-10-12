@@ -247,11 +247,35 @@ def test_appimage_rejects_unsupported_compression_before_execution(compression):
         release_qt6.appimage_command('AppRun', 'runtime', 'AppDir', 'out.AppImage', compression)
 
 
-def test_local_scratch_directories_are_unique_and_writable():
-    directories = release_qt6.local_scratch_directories()
+def test_local_scratch_directories_are_unique_writable_and_executable():
+    notes = []
+    directories = release_qt6.local_scratch_directories(notes)
     assert directories
     assert len(set(directories)) == len(directories)
     assert all(directory.is_dir() and os.access(directory, os.W_OK) for directory in directories)
+    assert notes == []
+
+
+def test_local_scratch_directories_reject_noexec_mounts(monkeypatch, tmp_path):
+    """Writable but not executable is not a usable scratch directory."""
+    notes = []
+    calls = []
+
+    def fake_mkdtemp(**arguments):
+        calls.append(arguments)
+        (tmp_path / 'scratch').mkdir(exist_ok=True)
+        return str(tmp_path / 'scratch')
+
+    monkeypatch.setattr(release_qt6.tempfile, 'mkdtemp', fake_mkdtemp)
+    monkeypatch.setattr(release_qt6, 'directory_can_execute', lambda directory: False)
+    assert release_qt6.local_scratch_directories(notes) == []
+    assert calls  # every candidate directory was actually tried
+    assert notes and 'noexec' in notes[0]
+
+
+def test_directory_can_execute_probes_and_cleans_up(tmp_path):
+    assert release_qt6.directory_can_execute(tmp_path) is True
+    assert not (tmp_path / 'exec-probe').exists()  # the probe never leaks
 
 
 def elf64_with_a_payload(payload_offset, last_section=((0x100, 0x40)), section_table=(0x100, 64, 1)):
@@ -293,6 +317,9 @@ def test_local_scratch_copy_is_verified(monkeypatch, tmp_path):
         assert copy.stat().st_mode & 0o111
     with pytest.raises(ReleaseError, match='No verified local copy'):
         release_qt6.local_scratch_copy(source, 'f' * 64)
+    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda notes=None: [])
+    with pytest.raises(ReleaseError, match='no usable local directory'):
+        release_qt6.local_scratch_copy(source)
 
 
 def test_appimage_extraction_retries_from_a_local_disk(monkeypatch, tmp_path):
