@@ -107,6 +107,26 @@ Pour préparer seulement le `.deb`, sans bundles ni publication :
 Cette commande contrôle le paquet natif ; elle ne remplace ni la suite complète
 ni la CI du même SHA avant publication. Pas d'overwrite d'un paquet existant.
 
+### Reprendre un run interrompu
+
+Un échec en étape 4-7 (AppImage, artefacts CI, provenance, draft) ne justifie pas
+de reconstruire les trois premières étapes :
+
+```bash
+bash release_qt6.sh --resume --wait-ci --draft                  # dernier run
+bash release_qt6.sh --resume 20261012T065426Z-418571 --draft    # run précis
+```
+
+Les étapes 1-3 sont alors **vérifiées, pas reconstruites** : le rapport du bundle
+est re-haché fichier par fichier (seuls les avis de licence et `RELEASE-INFO.json`
+ajoutés après coup sont tolérés en plus), l'archive portable est réextraite et son
+exécution relancée, le SHA-256 du `.deb` et le `source_commit` de son rapport sont
+recontrôlés, et le bundle doit porter le **même** SHA et le **même** run CI que
+ceux sélectionnés maintenant. Un dossier d'artefacts appartenant à un autre commit
+est refusé (message « drop --resume to rebuild everything ») : les binaires
+seraient périmés pour ce SHA. Les outils AppImage déjà téléchargés sont réutilisés
+après re-vérification de leur SHA-256 épinglé, jamais sans contrôle.
+
 ## 4. Contrôles CI et diagnostic des échecs
 
 La CI Qt6 doit être verte sur **12 jobs** pour le SHA exact avant tout tag. Les

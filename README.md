@@ -102,6 +102,20 @@ viennent de la même CI. Le profil autonome 6.11 reste inchangé.
 Il crée un **brouillon 0.9.1 non publié**, jamais Latest ; `v0.9.0` n'est pas
 modifié. Sans `--draft`, seuls les assets locaux sont préparés. Aucun
 pip/sudo/apt n'est exécuté par ce script.
+
+Un run interrompu après l'étape 3 (AppImage, artefacts CI, provenance, draft)
+se reprend **sans reconstruire** les trois premières étapes :
+
+```bash
+bash release_qt6.sh --resume --wait-ci --draft                  # dernier run
+bash release_qt6.sh --resume 20261012T065426Z-418571 --draft    # run précis
+```
+
+Rien n'est repris sur parole : le rapport du bundle est re-haché fichier par
+fichier, l'archive portable est réextraite et relancée, le SHA-256 du `.deb`
+recontrôlé, et le bundle doit être lié au *même* SHA et au *même* run CI.
+Reprendre les artefacts d'un autre commit est refusé : ils seraient périmés,
+il faut alors relancer sans `--resume`.
 Voir [la procédure complète et les limites](doc/RELEASE_LINUX_FR.md).
 
 ## Diagnostics et publication

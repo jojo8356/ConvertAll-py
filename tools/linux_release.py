@@ -43,7 +43,13 @@ def file_hashes(directory):
             for path in sorted(directory.rglob('*')) if path.is_file()}
 
 
-def verify_bundle_report(directory, report, commit, version):
+def verify_bundle_report(directory, report, commit, version, *, extra_prefixes=()):
+    """Re-hash the directory against a recorded report.
+
+    `extra_prefixes` names the paths a packaging step legitimately adds after
+    the report was written (the wheel notices and RELEASE-INFO.json); anything
+    else that is not in the report still fails.
+    """
     runtime = report.get('runtime', {})
     pins = {'application': 'ConvertAll', 'version': version, 'binding': 'PyQt6',
             'pyqt_binding': '6.11.0', 'qt_runtime': '6.11.2', 'sip_package': '13.13.0'}
@@ -61,7 +67,11 @@ def verify_bundle_report(directory, report, commit, version):
         path = safe_file(directory, name)
         if not re.fullmatch(r'[0-9a-f]{64}', str(digest)) or not path.is_file():
             raise ReleaseError(f'Missing/invalid bundle file: {name}')
-    if file_hashes(directory) != expected:
+    hashes = file_hashes(directory)
+    if extra_prefixes:
+        hashes = {name: digest for name, digest in hashes.items()
+                  if not name.startswith(tuple(extra_prefixes))}
+    if hashes != expected:
         raise ReleaseError('Bundle bytes differ from the tested bundle report')
 
 
@@ -313,12 +323,12 @@ def stage_appdir(bundle, destination, root):
 def collect_notices(bundle):
     """Copy wheel notices without claiming a complete legal/source inventory."""
     destination = Path(bundle) / 'doc/third-party'
-    destination.mkdir(parents=True)
+    destination.mkdir(parents=True, exist_ok=True)
     inventory = {}
     for name in ('PyQt6', 'PyQt6-Qt6', 'PyQt6-sip', 'PyInstaller', 'pyinstaller-hooks-contrib'):
         distribution = metadata.distribution(name)
         folder = destination / name
-        folder.mkdir()
+        folder.mkdir(exist_ok=True)  # a resumed run rewrites the same notices
         copied = []
         for item in distribution.files or []:
             relative = PurePosixPath(str(item).replace('\\', '/'))

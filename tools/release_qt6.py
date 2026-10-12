@@ -169,8 +169,37 @@ def download_artifact(run, name, destination):
     matches = [item for item in artifacts if item['name'] == name and not item['expired']]
     if len(matches) != 1:
         raise ReleaseError(f'Missing/expired/ambiguous CI artifact: {name}')
-    destination.mkdir(parents=True)
+    destination.mkdir(parents=True, exist_ok=True)
     command(['gh', 'run', 'download', run, '--repo', REPO, '--name', name, '--dir', destination])
+
+
+def previous_run(reference, commit, builds=None, releases=None):
+    """Work and asset directories of an earlier run, for --resume.
+
+    The asset directory name carries the commit it was built from, so artifacts
+    of another tree are refused instead of being repackaged under this SHA.
+    Nothing is trusted on sight: every recorded hash is re-verified afterwards.
+    """
+    builds = Path(builds if builds is not None else ROOT / 'build/qt6-release')
+    releases = Path(releases if releases is not None else ROOT / 'dist/qt6-release')
+    if reference == 'latest':
+        candidates = (sorted((path for path in builds.iterdir() if path.is_dir()),
+                             key=lambda path: path.name) if builds.is_dir() else [])
+        if not candidates:
+            raise ReleaseError('No earlier release run to resume; run once without --resume')
+        work = candidates[-1]
+    else:
+        work = builds / reference
+        if not (work / 'release.log').is_file():
+            raise ReleaseError(f'Not an earlier release run: {work}')
+    found = sorted(path.name for path in (releases.iterdir() if releases.is_dir() else [])
+                   if path.is_dir() and path.name.endswith('-' + work.name))
+    matches = [name for name in found if name == f'{commit}-{work.name}']
+    if len(matches) != 1:
+        raise ReleaseError(f'Run {work.name} holds {found or "no asset directory"}, not '
+                           f'{commit}. A resumed run only reuses artifacts built from the exact '
+                           'SHA being released; drop --resume to rebuild everything.')
+    return work, releases / matches[0]
 
 
 def validate_tool_pin(pin):
@@ -190,12 +219,24 @@ def appimage_command(tool, runtime, appdir, output, compression):
             '--no-appstream', appdir, output]
 
 
-def fetch_tool(pin, destination):
-    """No floating latest download: specific asset ID AND expected SHA-256."""
+def fetch_tool(pin, destination, reuse=False):
+    """No floating latest download: specific asset ID AND expected SHA-256.
+
+    With `reuse`, a file left by a previous run is accepted only after its
+    checksum matches the pin again, so resuming never executes unverified bytes.
+    """
     validate_tool_pin(pin)
     path = destination / pin['name']
     if path.exists():
-        raise ReleaseError(f'Download destination already exists: {path}')
+        if not reuse:
+            raise ReleaseError(f'Download destination already exists: {path}')
+        if packages.sha256(path) != pin['sha256']:
+            raise ReleaseError(f'Reused {path.name} does not match the pin; delete it to '
+                               'download the pinned asset again')
+        require_amd64_elf(path)
+        path.chmod(0o755)
+        print(f'Reusing pinned {pin["name"]} (checksum re-verified)', flush=True)
+        return path
     endpoint = f'repos/{pin["repository"]}/releases/assets/{pin["asset_id"]}'
     print(f'Download pinned {pin["name"]}...', flush=True)
     with path.open('wb') as stream:
@@ -542,8 +583,9 @@ def tag_target(tag):
 
 
 def check_launch(program, label, work, environment, version, *, bundle=None, prefix=()):
-    home = work / ('home-' + label)
-    home.mkdir()
+    # Throwaway HOME, always fresh: a resumed run must not inherit the preferences
+    # (or the window state) written by the earlier attempt.
+    home = Path(tempfile.mkdtemp(prefix=f'{label}-', dir=work))
     env = {**environment, 'HOME': str(home), 'APPDATA': str(home / 'appdata'),
            'XDG_CONFIG_HOME': str(home / 'config'), 'QT_QPA_PLATFORM': 'offscreen',
            'LANG': 'C.UTF-8', 'LC_MESSAGES': 'C', 'PYTHONIOENCODING': 'utf-8'}
@@ -570,13 +612,14 @@ def check_launch(program, label, work, environment, version, *, bundle=None, pre
     return {'status': 'PASS', 'runtime': runtime, 'qt_platform': 'offscreen'}
 
 
-def test_summary():
-    report = json.loads((ROOT / 'build/test-results/validation.json').read_text(encoding='utf-8'))
-    junit = ET.parse(ROOT / 'build/test-results/junit.xml').getroot()
+def test_summary(validation_path=None, junit_path=None, coverage_path=None):
+    results = ROOT / 'build/test-results'
+    report = json.loads((validation_path or results / 'validation.json').read_text(encoding='utf-8'))
+    junit = ET.parse(junit_path or results / 'junit.xml').getroot()
     suites = [junit] if junit.tag == 'testsuite' else junit.findall('testsuite')
     counts = {key: sum(int(suite.get(key, 0)) for suite in suites)
               for key in ('tests', 'failures', 'errors', 'skipped')}
-    coverage = json.loads((ROOT / 'build/test-results/coverage.json').read_text(encoding='utf-8'))
+    coverage = json.loads((coverage_path or results / 'coverage.json').read_text(encoding='utf-8'))
     return report, {**counts, 'coverage_percent': coverage['totals']['percent_covered']}
 
 
@@ -617,11 +660,18 @@ def build_release(args):
     if args.draft and github(f'repos/{REPO}/releases/tags/{tag}', missing_ok=True) is not None:
         raise ReleaseError(f'Release {tag} already exists. No overwrite/clobber is performed.')
     run = select_ci(commit, args.run_id, args.wait_ci)
-    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + f'-{os.getpid()}'
-    work = ROOT / 'build/qt6-release' / stamp
-    assets = ROOT / 'dist/qt6-release' / (commit + '-' + stamp)
-    work.mkdir(parents=True)
-    assets.mkdir(parents=True)
+    if args.resume is None:
+        stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + f'-{os.getpid()}'
+        work = ROOT / 'build/qt6-release' / stamp
+        assets = ROOT / 'dist/qt6-release' / (commit + '-' + stamp)
+        work.mkdir(parents=True)
+        assets.mkdir(parents=True)
+        resumed = False
+    else:
+        work, assets = previous_run(args.resume, commit)
+        resumed = True
+        print(f'Resuming run {work.name}: steps 1-3 are not rebuilt, every recorded hash is '
+              'verified again below', flush=True)
     LOG = work / 'release.log'
     epoch = int(git('show', '-s', '--format=%ct', commit))
     environment = {**os.environ, 'SOURCE_DATE_EPOCH': str(epoch), 'QT_API': 'pyqt6',
@@ -631,52 +681,102 @@ def build_release(args):
     print(f'SHA={commit}\nCI={run["html_url"]}\nAssets={assets}', flush=True)
 
     print('\n[1/7] Full local source QA (clean SHA, pinned profile, coverage)', flush=True)
-    command([sys.executable, ROOT / 'tools/validate_release.py', '--require-clean'], env=environment)
-    source_report, tests = test_summary()
+    if resumed:
+        print('Reusing the QA this run recorded; the SHA-bound checks below still run.', flush=True)
+        for name in ('source-validation.json', 'junit.xml', 'coverage.json'):
+            if not (assets / name).is_file():
+                raise ReleaseError(f'Run {work.name} has no recorded {name}: it failed before the '
+                                   'QA finished, so run once without --resume')
+        source_report, tests = test_summary(assets / 'source-validation.json', assets / 'junit.xml',
+                                            assets / 'coverage.json')
+    else:
+        command([sys.executable, ROOT / 'tools/validate_release.py', '--require-clean'],
+                env=environment)
+        source_report, tests = test_summary()
+        shutil.copyfile(ROOT / 'build/test-results/validation.json', assets / 'source-validation.json')
+        shutil.copyfile(ROOT / 'build/test-results/junit.xml', assets / 'junit.xml')
+        shutil.copyfile(ROOT / 'build/test-results/coverage.json', assets / 'coverage.json')
     if source_report.get('commit') != commit or source_report.get('release_eligible') is not True:
         raise ReleaseError('Local source report does not certify the current clean SHA')
-    shutil.copyfile(ROOT / 'build/test-results/validation.json', assets / 'source-validation.json')
-    shutil.copyfile(ROOT / 'build/test-results/junit.xml', assets / 'junit.xml')
-    shutil.copyfile(ROOT / 'build/test-results/coverage.json', assets / 'coverage.json')
 
     print('\n[2/7] Local Linux bundle (do not impose Ubuntu CI GLIBC on Debian)', flush=True)
-    command([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean',
-             '--distpath', work / 'dist', '--workpath', work / 'pyinstaller',
-             ROOT / 'source/convertall.spec'], env=environment)
     bundle = work / 'dist/convertall'
-    require_amd64_elf(bundle / 'convertall')
     linux_report = work / 'linux-bundle-validation.json'
-    command([sys.executable, ROOT / 'tools/check_bundle.py', bundle, '--report', linux_report], env=environment)
-    base_report = json.loads(linux_report.read_text(encoding='utf-8'))
-    packages.verify_bundle_report(bundle, base_report, commit, version)
-    shutil.copyfile(linux_report, assets / 'linux-bundle-validation.json')
-    glibc = packages.glibc_requirement(bundle, lambda path: command(
-        ['readelf', '--version-info', path], quiet=True))
-    notices = packages.collect_notices(bundle)
-    # Include a CPython notice where supplied by the build host (not a legal guarantee).
-    python_notice = Path('/usr/share/doc') / f'python{sys.version_info.major}.{sys.version_info.minor}' / 'copyright'
-    if python_notice.is_file():
-        shutil.copyfile(python_notice, bundle / 'doc/third-party/CPython-copyright')
-    info = {'version': version, 'source_commit': commit, 'ci_run': run['id'],
-            'architecture': 'x86_64', 'glibc_required': glibc, 'runtime': base_report['runtime']}
-    packages.write_file(bundle / 'RELEASE-INFO.json', json.dumps(info, indent=2) + '\n')
+    if resumed:
+        print('Reusing the bundle this run recorded: its report is re-hashed file by file.',
+              flush=True)
+        for path in (bundle, bundle / 'convertall', linux_report,
+                     bundle / 'RELEASE-INFO.json'):
+            if not path.exists():
+                raise ReleaseError(f'Run {work.name} has no {path.relative_to(work)} to resume '
+                                   'from; run once without --resume')
+        base_report = json.loads(linux_report.read_text(encoding='utf-8'))
+        # The bundle also holds what packaging adds after the report was written:
+        # the wheel notices and RELEASE-INFO.json are the only tolerated extras.
+        packages.verify_bundle_report(bundle, base_report, commit, version,
+                                      extra_prefixes=('doc/third-party/', 'RELEASE-INFO.json'))
+        require_amd64_elf(bundle / 'convertall')
+        info = json.loads((bundle / 'RELEASE-INFO.json').read_text(encoding='utf-8'))
+        if info.get('version') != version or info.get('source_commit') != commit:
+            raise ReleaseError('The reused bundle is not bound to this SHA/version')
+        if info.get('ci_run') != run['id']:
+            raise ReleaseError(f'The reused bundle is bound to CI run {info.get("ci_run")}, but '
+                               f'run {run["id"]} was selected; drop --resume, or pass --run-id '
+                               f'{info.get("ci_run")}')
+        glibc = info.get('glibc_required')
+        if not isinstance(glibc, str) or not glibc:
+            raise ReleaseError('The reused bundle has no recorded GLIBC requirement')
+        notices = packages.collect_notices(bundle)  # rewrites the very same notices
+    else:
+        command([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean',
+                 '--distpath', work / 'dist', '--workpath', work / 'pyinstaller',
+                 ROOT / 'source/convertall.spec'], env=environment)
+        require_amd64_elf(bundle / 'convertall')
+        command([sys.executable, ROOT / 'tools/check_bundle.py', bundle, '--report', linux_report],
+                env=environment)
+        base_report = json.loads(linux_report.read_text(encoding='utf-8'))
+        packages.verify_bundle_report(bundle, base_report, commit, version)
+        shutil.copyfile(linux_report, assets / 'linux-bundle-validation.json')
+        glibc = packages.glibc_requirement(bundle, lambda path: command(
+            ['readelf', '--version-info', path], quiet=True))
+        notices = packages.collect_notices(bundle)
+        # Include a CPython notice where supplied by the build host (not a legal guarantee).
+        python_notice = (Path('/usr/share/doc')
+                         / f'python{sys.version_info.major}.{sys.version_info.minor}' / 'copyright')
+        if python_notice.is_file():
+            shutil.copyfile(python_notice, bundle / 'doc/third-party/CPython-copyright')
+        info = {'version': version, 'source_commit': commit, 'ci_run': run['id'],
+                'architecture': 'x86_64', 'glibc_required': glibc,
+                'runtime': base_report['runtime']}
+        packages.write_file(bundle / 'RELEASE-INFO.json', json.dumps(info, indent=2) + '\n')
 
     print('\n[3/7] Portable executable archive and Debian package', flush=True)
     portable_name = f'ConvertAll-{version}-qt6-linux-x86_64'
     portable = work / portable_name
-    packages.copy_bundle(bundle, portable)
     tarball = assets / (portable_name + '.tar.gz')
-    packages.make_tar(portable, tarball, epoch)
     tar_extract = work / 'portable-extracted'
-    tar_extract.mkdir()
-    packages.extract_own_tar(tarball, tar_extract)
+    deb = assets / f'convertall_{version}-1_all.deb'
+    if resumed:
+        print('Re-extracting the shipped tarball to re-run its payload and launch checks.',
+              flush=True)
+        for path in (tarball, deb, assets / 'native-deb-validation.json'):
+            if not path.is_file():
+                raise ReleaseError(f'Run {work.name} has no {path.name} to resume from; run once '
+                                   'without --resume')
+        tar_extract.mkdir(parents=True, exist_ok=True)
+        packages.extract_own_tar(tarball, tar_extract)
+    else:
+        packages.copy_bundle(bundle, portable)
+        packages.make_tar(portable, tarball, epoch)
+        tar_extract.mkdir()
+        packages.extract_own_tar(tarball, tar_extract)
     packages.verify_payload(tar_extract / portable_name, base_report['bundle_sha256'])
     checks = {'portable': check_launch(tar_extract / portable_name / 'convertall', 'portable', work,
                                       environment, version, bundle=tar_extract / portable_name)}
-    command(['/usr/bin/python3', '-E', '-s', ROOT / 'tools/build_deb.py',
-             '--output-dir', assets, '--work-dir', work / 'native-deb',
-             '--maintainer', maintainer], env=environment)
-    deb = assets / f'convertall_{version}-1_all.deb'
+    if not resumed:
+        command(['/usr/bin/python3', '-E', '-s', ROOT / 'tools/build_deb.py',
+                 '--output-dir', assets, '--work-dir', work / 'native-deb',
+                 '--maintainer', maintainer], env=environment)
     checks['deb'] = json.loads((assets / 'native-deb-validation.json').read_text(encoding='utf-8'))
     if (checks['deb'].get('status') != 'PASS' or checks['deb'].get('source_commit') != commit
             or checks['deb'].get('bundled_runtime') is not False
@@ -685,9 +785,9 @@ def build_release(args):
 
     print('\n[4/7] AppImage with checksum-pinned builder AND runtime (no FUSE for tests)', flush=True)
     tools = work / 'appimage-tools'
-    tools.mkdir()
-    tool_image = fetch_tool(lock['appimagetool'], tools)
-    runtime = fetch_tool(lock['runtime'], tools)
+    tools.mkdir(exist_ok=True)
+    tool_image = fetch_tool(lock['appimagetool'], tools, reuse=resumed)
+    runtime = fetch_tool(lock['runtime'], tools, reuse=resumed)
     # Everything the pinned tool reads or writes is kept in a local ASCII directory:
     # GLib converts each argument through the locale charset, so a work tree under a
     # non-ASCII name (or a non-UTF-8 locale) aborts appimagetool with "Option parsing
@@ -865,6 +965,9 @@ def main():
     parser.add_argument('--draft', action='store_true', help='create a non-published GitHub draft after all checks')
     parser.add_argument('--wait-ci', action='store_true', help='wait for the current SHA CI before local builds')
     parser.add_argument('--run-id', type=int, help='use this exact successful CI push run (same SHA required)')
+    parser.add_argument('--resume', nargs='?', const='latest', metavar='STAMP',
+                        help='reuse the re-verified artifacts of an earlier run of this exact '
+                             'SHA (default: the most recent run) instead of rebuilding steps 1-3')
     parser.add_argument('--maintainer', help='public .deb Maintainer: "Name <email>"; default: local git identity')
     args = parser.parse_args()
     try:

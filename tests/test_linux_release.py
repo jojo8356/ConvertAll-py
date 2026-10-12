@@ -68,6 +68,21 @@ def test_bundle_extra_or_missing_files_are_rejected(bundle):
         packages.verify_bundle_report(bundle, report, SHA, '0.9.0')
 
 
+def test_bundle_report_tolerates_only_the_extras_packaging_adds(bundle, tmp_path):
+    """A resumed run re-verifies the bundle that already holds the notices."""
+    report = report_for(bundle)
+    (bundle / 'doc/third-party/PyQt6').mkdir(parents=True)
+    (bundle / 'doc/third-party/PyQt6/LICENSE').write_text('GPL', encoding='utf-8')
+    (bundle / 'RELEASE-INFO.json').write_text('{}', encoding='utf-8')
+    with pytest.raises(ReleaseError, match='bytes differ'):
+        packages.verify_bundle_report(bundle, report, SHA, '0.9.0')
+    allowed = ('doc/third-party/', 'RELEASE-INFO.json')
+    packages.verify_bundle_report(bundle, report, SHA, '0.9.0', extra_prefixes=allowed)
+    (bundle / 'stowaway.so').write_bytes(b'unrecorded')
+    with pytest.raises(ReleaseError, match='bytes differ'):
+        packages.verify_bundle_report(bundle, report, SHA, '0.9.0', extra_prefixes=allowed)
+
+
 @pytest.mark.parametrize('name', ['', '.', '../secret', '/etc/passwd', 'a/../b', './file',
                                  'a\\b', 'nul\x00file'])
 def test_artifact_paths_cannot_escape(tmp_path, name):
@@ -297,6 +312,65 @@ def test_missing_jobs_message_names_the_marker_when_nothing_ran():
     with pytest.raises(ReleaseError, match='contains \\[PROD\\]'):
         release_qt6.validate_ci_jobs([{'name': 'Tests ubuntu-24.04 / Python 3.11 / Qt6',
                                        'status': 'completed', 'conclusion': 'skipped'}])
+
+
+def test_a_resumed_run_reuses_the_artifacts_of_the_exact_sha(tmp_path):
+    builds, releases = tmp_path / 'build', tmp_path / 'dist'
+    stamp = '20260101T000000Z-1'
+    (builds / stamp).mkdir(parents=True)
+    (builds / stamp / 'release.log').write_text('log', encoding='utf-8')
+    (releases / f'{"b" * 40}-{stamp}').mkdir(parents=True)
+    # Artifacts of another tree are never repackaged under this SHA.
+    with pytest.raises(ReleaseError, match='drop --resume to rebuild'):
+        release_qt6.previous_run(stamp, SHA, builds, releases)
+    (releases / f'{SHA}-{stamp}').mkdir()
+    work, assets = release_qt6.previous_run(stamp, SHA, builds, releases)
+    assert work == builds / stamp and assets == releases / f'{SHA}-{stamp}'
+
+
+def test_resume_latest_picks_the_most_recent_run_and_needs_one(tmp_path):
+    builds, releases = tmp_path / 'build', tmp_path / 'dist'
+    for stamp in ('20260101T000000Z-1', '20260102T000000Z-2'):
+        (builds / stamp).mkdir(parents=True)
+        (builds / stamp / 'release.log').write_text('log', encoding='utf-8')
+        (releases / f'{SHA}-{stamp}').mkdir(parents=True)
+    work, assets = release_qt6.previous_run('latest', SHA, builds, releases)
+    assert work.name == '20260102T000000Z-2'
+    assert assets.name == f'{SHA}-20260102T000000Z-2'
+    with pytest.raises(ReleaseError, match='without --resume'):
+        release_qt6.previous_run('latest', SHA, tmp_path / 'empty', tmp_path / 'empty')
+    with pytest.raises(ReleaseError, match='Not an earlier release run'):
+        release_qt6.previous_run('nope', SHA, builds, releases)
+
+
+def test_fetch_tool_reuse_reverifies_the_pin_instead_of_downloading(tmp_path):
+    name = 'runtime-x86_64'
+    path = tmp_path / name
+    header = bytearray(20)
+    header[:6] = b'\x7fELF\x02\x01'
+    struct.pack_into('<H', header, 18, 62)  # x86_64
+    path.write_bytes(bytes(header))
+    pin = {'repository': 'AppImage/type2-runtime', 'asset_id': 596078161, 'name': name,
+           'sha256': packages.sha256(path)}
+    assert release_qt6.fetch_tool(pin, tmp_path, reuse=True) == path  # no download happened
+    path.write_bytes(b'\x7fELF\x02\x01' + b'x' * 14)
+    with pytest.raises(ReleaseError, match='does not match the pin'):
+        release_qt6.fetch_tool(pin, tmp_path, reuse=True)
+    with pytest.raises(ReleaseError, match='already exists'):
+        release_qt6.fetch_tool(pin, tmp_path)
+
+
+def test_test_summary_reads_a_previous_or_a_fresh_results_directory(tmp_path):
+    (tmp_path / 'validation.json').write_text(json.dumps({'commit': SHA, 'release_eligible': True}),
+                                              encoding='utf-8')
+    (tmp_path / 'junit.xml').write_text(
+        '<testsuite tests="4" failures="1" errors="0" skipped="1"/>', encoding='utf-8')
+    (tmp_path / 'coverage.json').write_text(json.dumps({'totals': {'percent_covered': 90.7}}),
+                                            encoding='utf-8')
+    report, counts = release_qt6.test_summary(tmp_path / 'validation.json', tmp_path / 'junit.xml',
+                                              tmp_path / 'coverage.json')
+    assert report['commit'] == SHA
+    assert counts == {'tests': 4, 'failures': 1, 'errors': 0, 'skipped': 1, 'coverage_percent': 90.7}
 
 
 def test_tool_locks_are_explicit_and_unverified_assets_are_not_executed(tmp_path, monkeypatch):
