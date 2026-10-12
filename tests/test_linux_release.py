@@ -323,6 +323,64 @@ def test_local_scratch_copy_is_verified(monkeypatch, tmp_path):
         release_qt6.local_scratch_copy(source)
 
 
+def test_fs_safe_keeps_odd_paths_printable_and_serializable(tmp_path):
+    """A work tree name that is not valid UTF-8 must not break logs or the manifest."""
+    odd = tmp_path / 'T\udce9l\udce9chargements'
+    safe = release_qt6.fs_safe(odd)
+    assert safe.isascii()
+    assert '\\udce9' not in safe  # escaped as bytes, never as lone surrogates
+    assert json.dumps({'paths': {safe: False}})  # what release-provenance.json needs
+
+
+def test_appimage_binfmt_handlers_only_reports_appimage_entries(tmp_path):
+    (tmp_path / 'register').write_text('-1', encoding='utf-8')
+    (tmp_path / 'status').write_text('enabled', encoding='utf-8')
+    (tmp_path / 'python3.13').write_text('enabled\ninterpreter /usr/bin/python3.13\n', encoding='utf-8')
+    (tmp_path / 'AppImageLauncher').write_text(
+        'enabled\ninterpreter /usr/bin/AppImageLauncher\nflags: POCF\n', encoding='utf-8')
+    handlers = release_qt6.appimage_binfmt_handlers(tmp_path)
+    assert list(handlers) == ['AppImageLauncher']
+    assert 'interpreter' in handlers['AppImageLauncher']
+    assert release_qt6.appimage_binfmt_handlers(tmp_path / 'missing') == {}
+
+
+def test_appimage_environment_report_records_locale_and_ascii_flags(tmp_path):
+    report = release_qt6.appimage_environment_report([tmp_path, Path('/tmp/T\udce9l')])
+    assert set(report) == {'locale', 'binfmt_misc_appimage_handlers', 'paths'}
+    assert set(report['locale']) == {'LANG', 'LC_ALL', 'LC_CTYPE', 'LC_MESSAGES', 'LANGUAGE',
+                                     'TMPDIR', 'PYTHONUTF8', 'PYTHONIOENCODING'}
+    assert report['paths'][release_qt6.fs_safe(tmp_path)] is True
+    assert report['paths'][release_qt6.fs_safe(Path('/tmp/T\udce9l'))] is False
+    assert json.dumps(report)  # the manifest embeds this report
+
+
+def test_ascii_build_directory_skips_non_ascii_candidates(monkeypatch, tmp_path):
+    non_ascii = tmp_path / 'T\udce9l\udce9chargements'
+    ascii_dir = tmp_path / 'release-scratch'
+    monkeypatch.setattr(release_qt6, 'local_scratch_directories', lambda notes=None: [non_ascii])
+    assert release_qt6.ascii_build_directory() is None
+    monkeypatch.setattr(release_qt6, 'local_scratch_directories',
+                        lambda notes=None: [non_ascii, ascii_dir])
+    assert release_qt6.ascii_build_directory() == ascii_dir
+
+
+def test_ascii_tree_copies_a_non_ascii_tree(tmp_path):
+    """appimagetool resolves its helpers relative to its own path, so the copy is complete."""
+    source = tmp_path / 'T\udce9l' / 'squashfs-root'
+    (source / 'usr/bin').mkdir(parents=True)
+    (source / 'AppRun').write_text('#!/bin/sh\n', encoding='utf-8')
+    (source / 'usr/bin/mksquashfs').write_text('binary\n', encoding='utf-8')
+    (source / 'AppRun').chmod(0o755)
+    destination = tmp_path / 'ascii-tool'
+    copied = release_qt6.ascii_tree(source, destination)
+    assert copied == destination
+    assert (destination / 'AppRun').read_text(encoding='utf-8') == '#!/bin/sh\n'
+    assert (destination / 'usr/bin/mksquashfs').is_file()
+    if os.name == 'posix':
+        assert (destination / 'AppRun').stat().st_mode & 0o111
+    assert release_qt6.ascii_tree(Path('/tmp/plain'), destination) == Path('/tmp/plain')
+
+
 def test_appimage_extraction_retries_from_a_local_disk(monkeypatch, tmp_path):
     """A shared or synchronised work tree must not dead-end the AppImage step."""
     image = tmp_path / 'appimagetool-x86_64.AppImage'

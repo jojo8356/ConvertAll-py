@@ -133,6 +133,33 @@ Le runtime [type2-runtime](https://github.com/AppImage/type2-runtime) choisi
 est statique (musl/libfuse) ; la QA emploie extraction/exécution sans FUSE.
 Le montage FUSE réel et la compatibilité GPU restent à accepter sur le poste.
 
+Deux pannes d'environnement distinctes ont été observées sur un poste réel, et
+sont diagnostiquées automatiquement :
+
+1. **Construction** — appimagetool passe chaque argument par la conversion
+   locale → UTF-8 de GLib (`g_locale_to_utf8`, y compris pour les types
+   « filename ») : dès qu'un chemin contient des octets non-ASCII et que la
+   locale du shell n'est pas UTF-8, le tool s'arrête sur
+   « Option parsing failed: Séquence d'octets incorrecte en entrée du
+   convertisseur » **avant** toute construction. L'étape 4 assemble donc
+   toujours l'AppImage dans un dossier de travail ASCII, local et exécutable
+   (repli documenté ci-dessous), passe `LC_ALL=C.UTF-8`, copie le runtime
+   épinglé dans ce dossier (SHA-256 revérifié) et n'accepte la sortie qu'une
+   fois présente, avant de la déplacer vers `dist/`.
+2. **Exécution** — un gestionnaire `binfmt_misc` (AppImageLauncher et
+   similaires) revendique tout fichier portant la magie `AI\002` et l'analyse
+   avec son propre lecteur squashfs, incapable de lire notre payload zstd :
+   l'AppImage ne démarre plus du tout, même correcte. L'étape 4 journalise
+   l'environnement (`[appimage] locale…`, `[appimage] binfmt_misc…`) pour
+   trancher entre les deux, et si l'exécution directe reste impossible, le
+   payload et le runtime sont tout de même exercés via le **runtime épinglé et
+   `TARGET_APPIMAGE`** — c'est-à-dire exactement les octets embarqués dans
+   l'AppImage — avec un `WARNING` explicite. `appimage_runtime.launcher` dans
+   `release-provenance.json` et une section « AppImage acceptance required »
+   dans les notes le rappellent : un double-clic réel doit être confirmé avant
+   de publier Latest. Pour tester en direct :
+   `sudo systemctl stop appimagelauncherd`.
+
 L'auto-extraction lit `/proc/self/exe` à l'offset calculé depuis la table des
 sections ELF : certains montages (dossiers synchronisés ou nuagiques, clone
 rangé dans « Téléchargements ») renvoient alors d'autres octets et l'extraction

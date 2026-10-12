@@ -373,6 +373,98 @@ def extract_appimage(image, destination, *, required, expected_sha256=None, runt
                          'Checksum pins stay enforced; no unverified tool is ever used.')
 
 
+BINFMT_DIRECTORY = Path('/proc/sys/fs/binfmt_misc')
+
+
+def fs_safe(value):
+    """A path that can always be printed and serialized, whatever bytes it holds.
+
+    A work tree whose name is not valid UTF-8 reaches Python as lone surrogates;
+    printing or json-dumping those raises, which would turn a clear diagnostic
+    into a crash, so odd bytes are escaped here.
+    """
+    return os.fsencode(str(value)).decode('ascii', 'backslashreplace')
+
+
+def appimage_binfmt_handlers(directory=BINFMT_DIRECTORY):
+    """Registrations that intercept AppImage execution, e.g. AppImageLauncher.
+
+    Such a handler claims every file carrying the AppImage magic and parses it
+    with its own squashfs reader, which cannot read our zstd payload, so the
+    image fails before its own runtime ever runs. Nothing here is changed, it
+    is reported so a failed launch can be told apart from a broken artifact.
+    """
+    handlers = {}
+    try:
+        entries = sorted(Path(directory).iterdir())
+    except OSError:
+        return handlers
+    for entry in entries:
+        if entry.name in ('register', 'status'):
+            continue
+        try:
+            text = entry.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        if 'appimage' in (entry.name + text).lower():
+            handlers[entry.name] = text.strip().replace('\n', '; ')
+    return handlers
+
+
+def appimage_environment_report(paths=()):
+    """Environment facts that explain a local AppImage failure, kept in the log.
+
+    appimagetool runs its option values through GLib's locale-to-UTF-8
+    conversion, which fails with "Option parsing failed: Invalid byte sequence
+    in conversion input" when a path is not ASCII and the locale charset is not
+    UTF-8. Recording the locale and the paths tells that failure apart from a
+    real build problem without another round trip.
+    """
+    report = {'locale': {name: os.environ.get(name) for name in
+                         ('LANG', 'LC_ALL', 'LC_CTYPE', 'LC_MESSAGES', 'LANGUAGE',
+                          'TMPDIR', 'PYTHONUTF8', 'PYTHONIOENCODING')},
+              'binfmt_misc_appimage_handlers': appimage_binfmt_handlers(),
+              'paths': {fs_safe(path): str(path).isascii() for path in paths}}
+    print('[appimage] locale: ' + ' '.join(f'{name}={fs_safe(value)}' for name, value in
+                                           report['locale'].items() if value is not None), flush=True)
+    if report['binfmt_misc_appimage_handlers']:
+        print('[appimage] binfmt_misc may intercept AppImages: '
+              + '; '.join(f'{name}: {text}' for name, text in
+                          report['binfmt_misc_appimage_handlers'].items()), flush=True)
+        print('[appimage] stop that handler (for AppImageLauncher: '
+              '"sudo systemctl stop appimagelauncherd") to launch AppImages directly.', flush=True)
+    else:
+        print('[appimage] no binfmt_misc AppImage handler detected', flush=True)
+    non_ascii = [path for path, is_ascii in report['paths'].items() if not is_ascii]
+    if non_ascii:
+        print('[appimage] non-ASCII paths handed to appimagetool: ' + ', '.join(non_ascii),
+              flush=True)
+    return report
+
+
+def ascii_build_directory():
+    """A local, pure-ASCII directory used to run the pinned AppImage tool.
+
+    GLib converts every argument, so building from ASCII paths keeps the tool
+    independent of the locale charset and of the work tree name.
+    """
+    for directory in local_scratch_directories():
+        if str(directory).isascii():
+            return directory
+    return None
+
+
+def ascii_tree(root, destination):
+    """A local copy of an extracted tool tree, so its path is pure ASCII."""
+    root, destination = Path(root), Path(destination)
+    if str(root).isascii():
+        return root
+    if destination.exists():
+        shutil.rmtree(destination)
+    shutil.copytree(root, destination, symlinks=True, copy_function=shutil.copy2)
+    return destination
+
+
 def maintainer_identity(provided):
     if provided:
         return provided
@@ -549,32 +641,73 @@ def build_release(args):
     tools.mkdir()
     tool_image = fetch_tool(lock['appimagetool'], tools)
     runtime = fetch_tool(lock['runtime'], tools)
-    tool = extract_appimage(tool_image, tools / 'extracted', required='AppRun',
-                            expected_sha256=lock['appimagetool']['sha256'],
-                            runtime=runtime) / 'AppRun'
-    appdir = packages.stage_appdir(bundle, work / 'ConvertAll.AppDir', ROOT)
+    # Everything the pinned tool reads or writes is kept in a local ASCII directory:
+    # GLib converts each argument through the locale charset, so a work tree under a
+    # non-ASCII name (or a non-UTF-8 locale) aborts appimagetool with "Option parsing
+    # failed: Invalid byte sequence in conversion input" before it does any work.
+    build_dir = ascii_build_directory() or work
+    if not str(build_dir).isascii():
+        print('WARNING: no ASCII build directory is available; appimagetool may refuse the '
+              'paths it is given below.', flush=True)
+    checks['appimage_environment'] = appimage_environment_report(
+        [tool_image, runtime, build_dir, assets])
+    tool_root = extract_appimage(tool_image, build_dir / 'tool-extracted', required='AppRun',
+                                expected_sha256=lock['appimagetool']['sha256'],
+                                runtime=runtime)
+    tool = ascii_tree(tool_root, build_dir / 'tool') / 'AppRun'
+    appdir = packages.stage_appdir(bundle, build_dir / 'ConvertAll.AppDir', ROOT)
     command(['desktop-file-validate', appdir / 'convertall.desktop'])
+    runtime_argument = build_dir / 'runtime-x86_64'
+    shutil.copyfile(runtime, runtime_argument)
+    if packages.sha256(runtime_argument) != lock['runtime']['sha256']:
+        raise ReleaseError('Copied runtime does not match the lock file checksum')
     image = assets / f'ConvertAll-{version}-x86_64.AppImage'
-    command(appimage_command(tool, runtime, appdir, image, lock['compression']),
-            env={**environment, 'ARCH': 'x86_64', 'VERSION': version})
+    built = build_dir / image.name
+    command(appimage_command(tool, runtime_argument, appdir, built, lock['compression']),
+            cwd=build_dir, env={**environment, 'ARCH': 'x86_64', 'VERSION': version,
+                                'LC_ALL': 'C.UTF-8'})
+    if not built.is_file():
+        raise ReleaseError(f'appimagetool reported success but {built} is missing')
+    shutil.move(built, image)
     image.chmod(0o755)
-    # First exercise the actual AppImage runtime, not just the uncompressed AppDir.
+    # Then exercise the actual AppImage runtime, not just the uncompressed AppDir.
     # The runtime reads its payload through /proc/self/exe and unpacks itself into
-    # TMPDIR, so both are pointed at a verified local directory when one exists, and
-    # a broken work tree is retried from a byte-identical local copy.
+    # TMPDIR, so both are pointed at a verified local directory when one exists, an
+    # unreadable work tree is retried from a byte-identical local copy, and an
+    # environment that intercepts AppImage execution falls back to the pinned runtime
+    # reading the very same file, which is the same runtime those bytes embed.
     scratch = local_scratch_directories()
     runtime_environment = {**environment, 'TMPDIR': str(scratch[0])} if scratch else environment
+    prefix = ('--appimage-extract-and-run',)
+    launcher, direct_error = 'direct', None
     try:
         checks['appimage_runtime'] = check_launch(image, 'appimage-runtime', work,
-                                                  runtime_environment, version,
-                                                  prefix=('--appimage-extract-and-run',))
+                                                  runtime_environment, version, prefix=prefix)
     except ReleaseError as error:
-        print(f'WARNING: {error}\nWARNING: retrying the AppImage runtime check from a local '
-              'copy...', flush=True)
-        checks['appimage_runtime'] = check_launch(local_scratch_copy(image),
-                                                  'appimage-runtime-local', work,
-                                                  runtime_environment, version,
-                                                  prefix=('--appimage-extract-and-run',))
+        direct_error = str(error)
+        print(f'WARNING: {error}', flush=True)
+        try:
+            print('WARNING: retrying the AppImage runtime check from a verified local copy...',
+                  flush=True)
+            checks['appimage_runtime'] = check_launch(local_scratch_copy(image),
+                                                      'appimage-runtime-local', work,
+                                                      runtime_environment, version, prefix=prefix)
+            launcher = 'verified local copy'
+        except ReleaseError as copy_error:
+            print(f'WARNING: {copy_error}\nWARNING: executing the AppImage is blocked in this '
+                  'environment; retrying the same payload through the pinned runtime with '
+                  'TARGET_APPIMAGE...', flush=True)
+            checks['appimage_runtime'] = check_launch(
+                runtime, 'appimage-runtime-pinned', work,
+                {**runtime_environment, 'TARGET_APPIMAGE': str(image)}, version, prefix=prefix)
+            launcher = 'pinned runtime with TARGET_APPIMAGE'
+    if launcher != 'direct':
+        checks['appimage_runtime'] = {**checks['appimage_runtime'], 'launcher': launcher,
+                                      'direct_execution_error': direct_error}
+        print('WARNING: the built AppImage could not be launched directly on this machine; its '
+              f'payload and runtime were exercised through the {launcher}. Check for an '
+              'AppImage binfmt_misc handler (see [appimage] above) and confirm a double-click '
+              'launch in the acceptance VM before publishing Latest.', flush=True)
     extracted_app = extract_appimage(image, work / 'appimage-extracted',
                                      required='usr/lib/convertall', runtime=runtime)
     packages.verify_payload(extracted_app / 'usr/lib/convertall', base_report['bundle_sha256'])
@@ -642,6 +775,15 @@ def build_release(args):
              'Review GPLv3 and all third-party notices/corresponding-source obligations. '
              'Collected wheel notices are not a complete legal inventory.\n'
              'Qt5 v0.8.1 is unchanged. This release is a draft, not automatically Latest.\n')
+    launcher = checks.get('appimage_runtime', {}).get('launcher', 'direct')
+    if launcher != 'direct':
+        notes += (
+            f'\n## AppImage acceptance required\n'
+            f'This build host could not launch the produced AppImage itself; the payload and '
+            f'runtime were exercised through the {launcher} instead (see appimage_runtime in '
+            f'release-provenance.json). Confirm a real double-click launch, desktop/DPI and GPU '
+            f'behaviour in a clean environment, and check for an AppImage binfmt_misc handler '
+            f'before publishing Latest.\n')
     packages.write_file(assets / 'RELEASE_NOTES.md', notes)
     payloads = sorted(path for path in assets.iterdir() if path.is_file())
     packages.write_file(assets / 'SHA256SUMS', ''.join(
