@@ -85,10 +85,12 @@ printf 'Branche      : %s\n\n' "$BRANCH"
 printf 'Commits concernés sur cette branche :\n'
 # --no-use-mailmap est indispensable : git applique le .mailmap à --author, donc
 # la recherche des anciennes adresses ne trouverait plus rien.
+# Auteur et committer sont cherchés séparément : un commit écrit par l'outillage
+# mais enregistré par une autre identité doit aussi être repris.
 AFFECTED=''
 for address in "${REPLACE_EMAILS[@]}"; do
-    AFFECTED+=$(git log --no-use-mailmap --format='%H' --author="$address" \
-                        --committer="$address" "$BRANCH")$'\n'
+    AFFECTED+=$(git log --no-use-mailmap --format='%H' --author="$address" "$BRANCH")$'\n'
+    AFFECTED+=$(git log --no-use-mailmap --format='%H' --committer="$address" "$BRANCH")$'\n'
 done
 AFFECTED=$(printf '%s\n' "$AFFECTED" | sed '/^$/d' | sort -u)
 if [[ -z "$AFFECTED" ]]; then
