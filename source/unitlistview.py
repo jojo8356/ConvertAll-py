@@ -14,8 +14,8 @@
 
 from PyQt6.QtCore import (pyqtSignal, Qt, QItemSelectionModel)
 from PyQt6.QtGui import QPalette
-from PyQt6.QtWidgets import (QAbstractItemView, QApplication, QTreeWidget,
-                             QTreeWidgetItem)
+from PyQt6.QtWidgets import (QAbstractItemView, QApplication, QHeaderView,
+                             QTreeWidget, QTreeWidgetItem)
 import re
 
 
@@ -33,11 +33,19 @@ class UnitListView(QTreeWidget):
         self.setRootIsDecorated(False)
         self.setColumnCount(3)
         self.setHeaderLabels([_('Unit Name'), _('Unit Type'), _('Comments')])
-        self.header().setStretchLastSection(False)
-        self.header().setSortIndicatorShown(True)
-        self.header().setSectionsClickable(True)
-        self.header().setSortIndicator(0, Qt.SortOrder.AscendingOrder)
-        self.header().sectionClicked.connect(self.changeSort)
+        header = self.header()
+        header.setStretchLastSection(False)
+        # The first two columns keep the width of their text; the comments column
+        # takes whatever is left, so the list always fills the dialog at any size
+        # instead of keeping a fixed content width. A comment that no longer fits
+        # is elided, and its full text stays available as a tooltip.
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSortIndicatorShown(True)
+        header.setSectionsClickable(True)
+        header.setSortIndicator(0, Qt.SortOrder.AscendingOrder)
+        header.sectionClicked.connect(self.changeSort)
         self.itemSelectionChanged.connect(self.replaceUnit)
         self.loadUnits()
 
@@ -47,7 +55,8 @@ class UnitListView(QTreeWidget):
         self.clear()
         for unit in self.unitData.values():
             UnitListViewItem(unit, self)
-        for col in range(3):
+        # Only the two sized columns: the comments column follows the width.
+        for col in (0, 1):
             self.resizeColumnToContents(col)
 
     def updateFiltering(self, focusProxy=None):
@@ -211,4 +220,8 @@ class UnitListViewItem(QTreeWidgetItem):
         self.unit = unit
         unit.viewLink = self
         for colNum in range(3):
-            self.setText(colNum, unit.columnText(colNum))
+            text = unit.columnText(colNum)
+            self.setText(colNum, text)
+            # The comments column can be narrower than its text.
+            if colNum == 2 and text:
+                self.setToolTip(colNum, text)

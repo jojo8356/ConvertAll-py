@@ -35,6 +35,50 @@ def test_production_modules_use_only_modern_qt6_apis(filename):
             assert node.func.id != 'QFontDatabase'  # Qt6 uses its static methods
 
 
+def test_the_comments_column_follows_the_list_width():
+    """Regression: the comments column was sized to its content, so it overflowed a
+    narrow dialog or left the list half empty instead of adapting to the width.
+
+    Two Qt details make this worth pinning in the source:
+      * with stretchLastSection(False), the resize mode of the last section applies;
+        with True, the property would override it and freeze the column;
+      * a Stretch section cannot be resized, so it must stay out of the
+        resizeColumnToContents loop.
+    """
+    text = (ROOT / 'source' / 'unitlistview.py').read_text(encoding='utf-8')
+    tree = ast.parse(text)
+    stretch_modes, sized_loops, stretch_last = set(), [], None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr == 'setSectionResizeMode' and len(node.args) == 2:
+                section, mode = node.args
+                if (isinstance(section, ast.Constant)
+                        and isinstance(mode, ast.Attribute) and mode.attr == 'Stretch'):
+                    stretch_modes.add(section.value)
+            if (node.func.attr == 'setStretchLastSection' and node.args
+                    and isinstance(node.args[0], ast.Constant)):
+                stretch_last = node.args[0].value
+        if not isinstance(node, ast.For):
+            continue
+        resizes = [child for statement in node.body for child in ast.walk(statement)
+                   if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute)
+                   and child.func.attr == 'resizeColumnToContents']
+        if resizes:
+            sized_loops.append(node.iter)
+    assert 2 in stretch_modes, 'the comments column must stretch with the list width'
+    assert stretch_last is False, ('stretchLastSection(True) overrides the last section '
+                                   'mode, which would freeze the comments column width')
+    assert sized_loops, ('measure the sized columns in a loop over an explicit list, '
+                        'such as (0, 1)')
+    for columns in sized_loops:
+        try:
+            measured = list(ast.literal_eval(columns))
+        except ValueError:
+            raise AssertionError('measure the columns from an explicit list, such as (0, 1), '
+                                 'so the stretching column stays out of it')
+        assert 2 not in measured, 'the comments column must not be sized to its content'
+
+
 def test_actions_palette_and_qt_runtime_translation_path(qapp):
     action = QAction('Qt6', qapp)
     assert action.text() == 'Qt6'
