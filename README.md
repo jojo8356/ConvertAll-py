@@ -11,10 +11,29 @@ sans remplacer les huit jobs du profil épinglé et les deux bundles.
 Aucune certification bureau réel/DPI/GPU n'est revendiquée. Qt5 0.8.1 reste
 immuable au commit `b10b8e7837e30a2ec9a957a9a2519e4ac0334db3`.
 
-## Lancer les sources
+## Lancer l'application
 
 Profil : **Python 3.11–3.14, PyQt6 6.11.0 / Qt 6.11.2 / PyQt6-sip 13.13.0**.
 Utiliser un environnement dédié ; ne pas installer PyQt5/PySide avec PyQt6.
+
+Le plus court chemin : le lanceur prépare le venv `.venv/qt6`, installe le
+profil épinglé puis démarre l'application. Il n'exécute ni test, ni build, ni
+commande privilégiée, et il ne touche pas au venv `.venv/test-all-qt6` des tests.
+
+```bash
+bash run_qt6.sh              # interface graphique
+bash run_qt6.sh -i           # mode interactif (REPL)
+bash run_qt6.sh -q 1 in cm   # conversion en ligne de commande
+bash run_qt6.sh --version
+```
+
+Tout argument non reconnu par `run_qt6.sh` part vers `convertall.py`, qui bascule
+en mode ligne de commande (`-q`, `-i`, `-t`, `--test-all`, `--runtime-info`…).
+Options du lanceur : `--no-install` (réutilise le venv sans pip), `--python CHEMIN`
+(choisir l'interpréteur 3.11–3.14), `--help`. Sur une machine sans écran, le mode
+graphique échoue : utilisez les arguments CLI ci-dessus.
+
+À la main, l'équivalent est :
 
 ```bash
 python3.11 -m venv .venv/qt6
