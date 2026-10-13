@@ -666,6 +666,25 @@ def test_appimage_binfmt_handlers_only_reports_appimage_entries(tmp_path):
     assert release_qt6.appimage_binfmt_handlers(tmp_path / 'missing') == {}
 
 
+def test_the_claimed_runtime_is_detected_by_its_magic_at_offset_eight(tmp_path):
+    """AppImage/type2-runtime writes b'AI\x02' at offset 8 of the runtime itself.
+
+    That is what makes the pinned runtime a claimed file like the image it builds:
+    using it as an escape hatch waits for the handler instead of reading the payload.
+    """
+    for magic in (b'AI\x01', b'AI\x02'):
+        claimed = tmp_path / f'runtime-{magic[2]}'
+        claimed.write_bytes(b'\x7fELF\x02\x01' + b'\x00\x00' + magic + b'\x00' * 8)
+        assert release_qt6.carries_appimage_magic(claimed), magic
+    plain = tmp_path / 'plain'
+    plain.write_bytes(b'\x7fELF\x02\x01' + b'\x00' * 16)
+    assert not release_qt6.carries_appimage_magic(plain)
+    assert not release_qt6.carries_appimage_magic(tmp_path / 'missing')
+    short = tmp_path / 'short'
+    short.write_bytes(b'\x7fELF')
+    assert not release_qt6.carries_appimage_magic(short)
+
+
 def test_appimage_environment_report_records_locale_and_ascii_flags(tmp_path):
     report = release_qt6.appimage_environment_report([tmp_path, Path('/tmp/T\udce9l')])
     assert set(report) == {'locale', 'binfmt_misc_appimage_handlers', 'paths'}
@@ -824,14 +843,36 @@ def test_a_command_timeout_is_a_release_error_not_an_abort(monkeypatch):
         release_qt6.command(['/some/hanging/AppRun', '--runtime-info'], timeout=180)
 
 
+def test_a_timed_out_command_keeps_what_it_printed(monkeypatch, tmp_path):
+    """The 180s wait on the pinned runtime left nothing to diagnose with."""
+    log = tmp_path / 'release.log'
+    monkeypatch.setattr(release_qt6, 'LOG', log)
+
+    def timing_out(arguments, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=arguments, timeout=kwargs['timeout'],
+                                        output='extracting\n', stderr='still running\n')
+    monkeypatch.setattr(release_qt6.subprocess, 'run', timing_out)
+    with pytest.raises(ReleaseError, match='timed out after 180s'):
+        release_qt6.command(['/some/hanging/runtime-x86_64', '--appimage-extract-and-run'],
+                            timeout=180, quiet=True)
+    kept = log.read_text(encoding='utf-8')
+    assert 'TIMED OUT after 180s' in kept
+    assert 'extracting' in kept and 'still running' in kept
+
+
 def test_an_intercepted_appimage_skips_the_layers_that_run_it():
     """binfmt_misc handlers claimed the pinned tool and hung on the built image."""
     handlers = {'AppImageLauncher': 'enabled; interpreter /usr/bin/AppImageLauncher'}
     assert release_qt6.runtime_launch_plan(handlers) == ['pinned runtime']
     assert release_qt6.runtime_launch_plan({}) == ['direct', 'local copy', 'pinned runtime']
+    # With a runtime the handler claims as well, no layer may execute anything:
+    # the 0.9.2 run on a host with AppImageLauncher waited 180s on that runtime
+    # while the payload that never gets executed was the only usable proof left.
+    assert release_qt6.runtime_launch_plan(handlers, True) == []
+    assert release_qt6.runtime_launch_plan({}, True) == ['direct', 'local copy', 'pinned runtime']
 
 
-def test_intercepted_extraction_never_executes_the_image(monkeypatch, tmp_path):
+def test_intercepted_extraction_never_executes_the_claimed_runtime(monkeypatch, tmp_path, capsys):
     image = tmp_path / 'tool.AppImage'
     image.write_bytes(b'\x7fELF\x02\x01' + b'x' * 64)
     runtime = tmp_path / 'runtime-x86_64'
@@ -851,6 +892,10 @@ def test_intercepted_extraction_never_executes_the_image(monkeypatch, tmp_path):
     root = release_qt6.extract_appimage(image, tmp_path / 'out', required='AppRun',
                                         runtime=runtime, intercepted=True)
     assert (root / 'AppRun').is_file()
+    # A warning that starts with an empty reason explains nothing (seen in the
+    # 0.9.2 local log as "WARNING: ; retrying through the pinned runtime...").
+    warnings = [line for line in capsys.readouterr().out.splitlines() if line.startswith('WARNING')]
+    assert warnings and all('WARNING: ;' not in line for line in warnings)
 
 
 def test_appimage_extraction_failure_stays_explicit(monkeypatch, tmp_path):
