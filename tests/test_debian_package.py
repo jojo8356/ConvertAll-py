@@ -13,7 +13,7 @@ pytestmark = pytest.mark.packaging
 
 @pytest.fixture
 def native_runtime():
-    return {'application': 'ConvertAll', 'version': '0.9.1', 'binding': 'PyQt6',
+    return {'application': 'ConvertAll', 'version': '0.9.2', 'binding': 'PyQt6',
             'python_executable': '/usr/bin/python3', 'python_version': '3.11.2',
             'pyqt_binding': '6.4.2', 'qt_runtime': '6.4.2', 'sip_package': '13.4.1',
             'sip_generator': '6.7.7', 'frozen': False,
@@ -22,10 +22,10 @@ def native_runtime():
 
 
 def test_system_qt_profile_is_distinct_from_frozen_wheel_pins(native_runtime):
-    packages.validate_debian_runtime(native_runtime, '0.9.1')
+    packages.validate_debian_runtime(native_runtime, '0.9.2')
     newer = copy.deepcopy(native_runtime)
     newer.update(python_version='3.13.5', pyqt_binding='6.8.4', qt_runtime='6.8.2', sip_package='13.10.2')
-    packages.validate_debian_runtime(newer, '0.9.1')
+    packages.validate_debian_runtime(newer, '0.9.2')
 
 
 @pytest.mark.parametrize('field,value', [('python_version', '3.10.9'), ('pyqt_binding', '6.3.0'),
@@ -35,7 +35,7 @@ def test_system_qt_profile_is_distinct_from_frozen_wheel_pins(native_runtime):
 def test_native_profile_rejects_unsupported_or_wrong_app_runtime(native_runtime, field, value):
     native_runtime[field] = value
     with pytest.raises(ReleaseError, match='Unsupported Debian'):
-        packages.validate_debian_runtime(native_runtime, '0.9.1')
+        packages.validate_debian_runtime(native_runtime, '0.9.2')
 
 
 @pytest.mark.parametrize('field,value', [
@@ -46,14 +46,14 @@ def test_native_profile_rejects_unsupported_or_wrong_app_runtime(native_runtime,
 def test_native_profile_cannot_be_validated_by_a_wheel_venv(native_runtime, field, value):
     native_runtime[field] = value
     with pytest.raises(ReleaseError, match='Debian package'):
-        packages.validate_debian_runtime(native_runtime, '0.9.1')
+        packages.validate_debian_runtime(native_runtime, '0.9.2')
 
 
 @pytest.mark.parametrize('name,content', [('runtime.so', b'library'), ('python', b'\x7fELFbinary'),
                                         ('setup.py', b'build script'), ('module.pyc', b'bytecode'),
                                         ('PyQt6', None)])
 def test_thin_package_rejects_any_bundled_runtime_or_build_file(tmp_path, name, content):
-    stage = packages.stage_deb(tmp_path / 'deb', ROOT, '0.9.1', 'Test <test@example.invalid>')
+    stage = packages.stage_deb(tmp_path / 'deb', ROOT, '0.9.2', 'Test <test@example.invalid>')
     path = stage / 'usr/share/convertall' / name
     if content is None:
         path.mkdir()
@@ -73,7 +73,7 @@ def test_generated_debian_entry_compiles_and_preserves_relative_resource_layout(
 
 
 def test_debian_packaging_does_not_collect_wheel_notices_or_frozen_payload(tmp_path):
-    stage = packages.stage_deb(tmp_path / 'deb', ROOT, '0.9.1', 'Test <test@example.invalid>')
+    stage = packages.stage_deb(tmp_path / 'deb', ROOT, '0.9.2', 'Test <test@example.invalid>')
     assert not list(stage.rglob('third-party'))
     assert not list(stage.rglob('PyQt6'))
     assert not list(stage.rglob('*.dist-info'))
@@ -110,7 +110,7 @@ def test_warning_parser_reports_each_unloadable_catalogue_once():
 
 
 def test_thin_package_must_ship_every_application_translation(tmp_path):
-    stage = packages.stage_deb(tmp_path / 'deb', ROOT, '0.9.1', 'Test <test@example.invalid>')
+    stage = packages.stage_deb(tmp_path / 'deb', ROOT, '0.9.2', 'Test <test@example.invalid>')
     (stage / 'usr/share/convertall/translations/convertall_sv.qm').unlink()
     with pytest.raises(ReleaseError, match='six application translations'):
         packages.verify_thin_deb_payload(stage)
@@ -129,7 +129,7 @@ def test_native_deb_failures_are_annotated_for_logless_debugging(tmp_path, monke
     import build_deb
     monkeypatch.setenv('GITHUB_ACTIONS', 'true')
     monkeypatch.setattr(build_deb, 'STEP', {'name': 'execute extracted package'})
-    build_deb.TRACE.append('staged 40 files for 0.9.1')
+    build_deb.TRACE.append('staged 40 files for 0.9.2')
     build_deb.report_failure(tmp_path,
                              ReleaseError('translations mismatched: warnings=[], expected=[qt_sv_SE]'),
                              'Traceback (most recent call last):\n')
@@ -137,7 +137,7 @@ def test_native_deb_failures_are_annotated_for_logless_debugging(tmp_path, monke
     report = (tmp_path / 'native-deb-failure.txt').read_text(encoding='utf-8')
     assert 'step=execute extracted package' in report
     assert 'expected=[qt_sv_SE]' in report
-    assert 'staged 40 files for 0.9.1' in report
+    assert 'staged 40 files for 0.9.2' in report
     assert '::error title=Native Debian package failed (execute extracted package)' in captured.out
 
 

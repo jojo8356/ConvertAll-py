@@ -61,7 +61,7 @@ def test_version_does_not_start_gui_or_load_catalogues():
     # Even a deliberately invalid GUI platform must not affect a CLI command.
     result = run_cli('--version', env={'QT_QPA_PLATFORM': 'invalid-platform'})
     assert result.returncode == 0
-    assert result.stdout.strip() == 'ConvertAll 0.9.1 (Qt6)'
+    assert result.stdout.strip() == 'ConvertAll 0.9.2 (Qt6)'
 
 
 @pytest.mark.parametrize('flag', ['-t', '--test'])

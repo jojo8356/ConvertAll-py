@@ -1,17 +1,29 @@
 #!/usr/bin/env python3
 # Bump the project version everywhere it is pinned, and check that the pinned
-# copies agree. The same coherence rules are asserted by
-# tests/test_packaging.py::test_versions_are_consistent_without_rewriting_history,
-# so a missed spot fails CI: this tool exists to avoid that round trip.
+# copies agree with the running code.
 #
-# Usage :
-#   python3 tools/bump_version.py --check           état de cohérence actuel
-#   python3 tools/bump_version.py 0.9.2 --dry-run   montre les changements
-#   python3 tools/bump_version.py 0.9.2             applique
+#   python3 tools/bump_version.py --check            état de cohérence
+#   python3 tools/bump_version.py 0.9.3 --dry-run    montre les changements
+#   python3 tools/bump_version.py 0.9.3              applique
+#   python3 tools/bump_version.py --repair 0.9.2     rattrape des jetons restés
+#                                                    à l'ancienne version
 #
-# It never commits, tags, pushes or touches a release. Historical versions stay
-# untouched: only the *first* version number of the HTML manuals is the header,
-# and RELEASE_NOTES_<old>.md files are kept as history.
+# It never commits, tags, pushes or touches a release.
+#
+# Why the strict rules
+# --------------------
+# The 0.9.1 -> 0.9.2 bump left three version literals behind and turned every CI
+# test job red in under two minutes:
+#   * tests/test_cli.py compared the `--version` output with a literal string,
+#     'ConvertAll 0.9.1 (Qt6)', which the old tool did not see because the
+#     version was inside a longer string;
+#   * tests/test_release_tools.py passed a fake runtime report whose 'version'
+#     is compared with the real __version__ by check_bundle.validate_runtime_info;
+#   * tests/test_linux_release.py expected 'Version: 0.9.1-1' in the Debian
+#     control file, which the old pattern missed because of the revision suffix.
+# So replacements are done on version *tokens* (not quoted strings), all of
+# tests/ is covered, and --check refuses to pass while a test that renders the
+# real version still carries a different token.
 import argparse
 import re
 import sys
@@ -21,17 +33,31 @@ DESCRIPTION = ('met à jour la version partout où elle est épinglée, ou véri
                'sont cohérentes')
 
 ROOT = Path(__file__).resolve().parent.parent
-# The manual header is the first 0.x.y of the file: a bare x.y.z pattern would
-# match the generator meta tag first on the translated manuals (LibreOffice
-# 5.4.6, for instance), which is exactly what the packaging test avoids.
-HEADER = re.compile(r'0\.\d+\.\d+')
+# Every manual announces the version in one line, for instance
+#   <p><strong>Python/Qt6 fork 0.9.2 (validation pending):</strong>
+# Anchoring on that line is what keeps the generator meta tag of README_ru.html
+# out of the way: its first bare x.y.z is 'LibreOffice 5.4.6.2'. A 0.x.y-only
+# pattern avoided that by accident, and broke on any 1.x version.
+MANUAL_HEADER = re.compile(r'(Python/Qt6 fork )(\d+\.\d+\.\d+)')
 VERSION = re.compile(r'\d+\.\d+\.\d+')
-
-# Files whose version is the *current* one. 'first' replaces the manual header
-# only (older versions are mentioned later in the same file on purpose).
-ALL_FIRST = ('doc/README*.html', 'docs/README*.html')
-ALL_EVERYWHERE = ('tests/test_cli.py', 'tests/test_gui.py', 'tests/test_packaging.py')
-ISS_KEYS = ('AppVersion=', 'convertall-', '-install')
+# A version token, not a version-shaped substring of something else: '0.9.10'
+# does not match '0.9.1', but the Debian revision ('0.9.1-1') and asset names
+# ('ConvertAll-0.9.1-qt6-…') do, which is the point.
+TOKEN = r'(?<![\w.]){}(?![\w])'
+# Files that must follow the current version. tests/ is taken as a whole: any
+# version literal there is either the current version or a fake one, and a stale
+# one is what breaks CI.
+MANAGED_GLOBS = ('tests/*.py',)
+# tests/test_bump_version.py defines the stale literals a bump has to catch, on
+# purpose. Rewriting them would make its own checks tautological.
+EXCLUDED = ('tests/test_bump_version.py',)
+# A test that compares the rendered program version, and a fake runtime report
+# whose 'version' is compared with the real __version__ (check_bundle does that
+# through validate_runtime_info; validate_debian_runtime takes the expectation as
+# an argument instead, so those fixtures may use any value).
+RENDERED_COMMAND = re.compile(r'ConvertAll (\d+\.\d+\.\d+) \(Qt6\)')
+FAKE_RUNTIME_VERSION = re.compile(r"'version'\s*:\s*'(\d+\.\d+\.\d+)'")
+RUNTIME_VALIDATOR = 'validate_runtime_info'
 
 
 def read(path):
@@ -54,7 +80,7 @@ def source_version():
 
 
 def html_manuals():
-    for pattern in ALL_FIRST:
+    for pattern in ('doc/README*.html', 'docs/README*.html'):
         for path in sorted(ROOT.glob(pattern)):
             yield path.relative_to(ROOT)
 
@@ -64,32 +90,99 @@ def iss_files():
         yield path.relative_to(ROOT)
 
 
-def plan(old, new):
-    """Return [(path, new_text)] for every file that must change."""
+def managed_python():
+    result = [Path('source/convertall.py')]
+    for pattern in MANAGED_GLOBS:
+        for path in sorted(ROOT.glob(pattern)):
+            relative = path.relative_to(ROOT)
+            if str(relative) not in EXCLUDED:
+                result.append(relative)
+    return result
+
+
+def rewrite_tokens(text, old, new):
+    return re.sub(TOKEN.format(re.escape(old)), new, text)
+
+
+def replacement_plan(old, new):
+    """[(path, new_text, note)] for every file that must change."""
     changes = []
     for path in html_manuals():
         text = read(path)
-        match = HEADER.search(text)
+        match = MANUAL_HEADER.search(text)
         if match is None:
-            raise SystemExit(f'{path}: no 0.x.y version found in the manual header')
-        if match.group() != new:
-            changes.append((path, text[:match.start()] + new + text[match.end():]))
+            raise SystemExit(f'{path}: no "Python/Qt6 fork x.y.z" line found')
+        if match.group(2) != new:
+            changes.append((path, text[:match.start(2)] + new + text[match.end(2):],
+                            f'en-tête {match.group(2)} -> {new}'))
     for path in iss_files():
         text = read(path)
-        replaced = text.replace(f'AppVersion={old}', f'AppVersion={new}')
-        replaced = replaced.replace(f'convertall-{old}-install', f'convertall-{new}-install')
+        replaced = rewrite_tokens(text, old, new)
         if replaced != text:
-            changes.append((path, replaced))
-    for path in ALL_EVERYWHERE:
+            changes.append((path, replaced, f'{old} -> {new}'))
+    for path in managed_python():
         text = read(path)
-        replaced = text.replace(f"'{old}'", f"'{new}'").replace(f'-{old}-', f'-{new}-')
+        replaced = rewrite_tokens(text, old, new)
         if replaced != text:
-            changes.append((path, replaced))
-    text = read('source/convertall.py')
-    replaced = text.replace(f"__version__ = '{old}'", f"__version__ = '{new}'")
-    if replaced != text:
-        changes.append(('source/convertall.py', replaced))
+            count = len(re.findall(TOKEN.format(re.escape(old)), text))
+            changes.append((path, replaced, f'{count} occurrence(s) {old} -> {new}'))
     return changes
+
+
+def rendered_version_mismatches(version):
+    """Tests that compare the real version of the program against a stale literal.
+
+    This is exactly what the 0.9.2 bump broke, in two places: the expected
+    `--version` output, and a fake runtime report whose 'version' is compared
+    with __version__. Both are detected without running the suite.
+    """
+    problems = []
+    for path in sorted(ROOT.glob('tests/*.py')):
+        if str(path.relative_to(ROOT)) in EXCLUDED:
+            continue
+        text = path.read_text(encoding='utf-8')
+        validates_runtime = RUNTIME_VALIDATOR in text
+        for number, line in enumerate(text.splitlines(), 1):
+            for match in RENDERED_COMMAND.finditer(line):
+                if match.group(1) != version:
+                    problems.append(f'{path.name}:{number} attend « ConvertAll '
+                                    f'{match.group(1)} (Qt6) » alors que le programme annonce '
+                                    f'{version}')
+            if validates_runtime:
+                for match in FAKE_RUNTIME_VERSION.finditer(line):
+                    if match.group(1) != version:
+                        problems.append(f'{path.name}:{number} compare un rapport de version '
+                                        f'{match.group(1)} à __version__ ({version}) via '
+                                        f'{RUNTIME_VALIDATOR}')
+    return problems
+
+
+def check(expected=None):
+    """The coherence rules of the packaging test, plus the stale-literal rule."""
+    problems = []
+    current = source_version()
+    if expected and current != expected:
+        problems.append(f'source/convertall.py pins {current}, expected {expected}')
+    from release_source import version_from_source            # noqa: E402
+    derived = version_from_source(read('source/convertall.py'))
+    if derived != current:
+        problems.append(f'release_source derives {derived} but __version__ is {current}')
+    for path in iss_files():
+        text = read(path)
+        if f'AppVersion={current}' not in text:
+            problems.append(f'{path}: AppVersion is not {current}')
+        if f'convertall-{current}-install' not in text:
+            problems.append(f'{path}: installer file name is not {current}')
+    for path in html_manuals():
+        match = MANUAL_HEADER.search(read(path))
+        if match is None:
+            problems.append(f'{path}: no "Python/Qt6 fork x.y.z" line found')
+        elif match.group(2) != current:
+            problems.append(f'{path}: announces {match.group(2)} instead of {current}')
+    problems.extend(rendered_version_mismatches(current))
+    if not (ROOT / f'doc/RELEASE_NOTES_{current}.md').is_file():
+        problems.append(f'doc/RELEASE_NOTES_{current}.md is missing')
+    return current, problems
 
 
 def release_notes(old, new):
@@ -120,41 +213,41 @@ def release_notes(old, new):
             '- licences et attributions.\n')
 
 
-def check(expected=None):
-    """The coherence rules of the packaging test, without pytest."""
-    problems = []
-    current = source_version()
-    if expected and current != expected:
-        problems.append(f'source/convertall.py pins {current}, expected {expected}')
-    from release_source import version_from_source          # noqa: E402
-    derived = version_from_source(read('source/convertall.py'))
-    if derived != current:
-        problems.append(f'release_source derives {derived} but __version__ is {current}')
-    for path in iss_files():
-        text = read(path)
-        if f'AppVersion={current}' not in text:
-            problems.append(f'{path}: AppVersion is not {current}')
-        if f'convertall-{current}-install' not in text:
-            problems.append(f'{path}: installer file name is not {current}')
-    for path in html_manuals():
-        match = HEADER.search(read(path))
-        if match is None or match.group() != current:
-            problems.append(f'{path}: manual header is not {current}')
-    for path in ALL_EVERYWHERE:
-        if f"'{current}'" not in read(path):
-            problems.append(f'{path}: does not pin {current}')
-    if not (ROOT / f'doc/RELEASE_NOTES_{current}.md').is_file():
-        problems.append(f'doc/RELEASE_NOTES_{current}.md is missing')
-    return current, problems
+def apply_changes(changes, dry_run):
+    for path, text, note in changes:
+        print(f'  {path}   ({note})')
+    if dry_run:
+        return
+    for path, text, _ in changes:
+        write(path, text)
 
 
 def main():
     parser = argparse.ArgumentParser(description=DESCRIPTION)
-    parser.add_argument('version', nargs='?', help='nouvelle version, ex. 0.9.2')
+    parser.add_argument('version', nargs='?', help='nouvelle version, ex. 0.9.3')
     parser.add_argument('--check', action='store_true', help='vérifie la cohérence')
     parser.add_argument('--dry-run', action='store_true', help='montre sans écrire')
+    parser.add_argument('--repair', metavar='ANCIENNE', help='remplace les jetons restés à '
+                        'ANCIENNE par la version courante (rattrapage)')
     arguments = parser.parse_args()
     sys.path.insert(0, str(ROOT / 'tools'))
+
+    if arguments.repair:
+        current = source_version()
+        changes = replacement_plan(arguments.repair, current)
+        if not changes:
+            print(f'Aucun jeton {arguments.repair} à rattraper.')
+            return 0
+        print(f'Rattrapage de {arguments.repair} vers {current} :')
+        apply_changes(changes, arguments.dry_run)
+        if arguments.dry_run:
+            print('\nRien écrit (--dry-run).')
+            return 0
+        _, problems = check()
+        print(f'\n{current} inchangée.' if not problems else '\nProblèmes restants :')
+        for problem in problems:
+            print(f'  - {problem}')
+        return 1 if problems else 0
 
     if arguments.check or not arguments.version:
         current, problems = check(arguments.version)
@@ -175,20 +268,18 @@ def main():
     if old == new:
         print(f'La version est déjà {new} ; rien à faire.')
         return 0
-    for path, text in plan(old, new):
-        previous = HEADER.search(read(path))
-        print(f'  {path}' + (f'   ({previous.group()} -> {new})' if previous else ''))
-    if not (ROOT / f'doc/RELEASE_NOTES_{new}.md').is_file():
-        print(f'  doc/RELEASE_NOTES_{new}.md (nouveau, à compléter)')
-    if arguments.dry_run:
-        print(f'\nRien écrit (--dry-run). {old} -> {new}')
-        return 0
-    for path, text in plan(old, new):
-        write(path, text)
+    changes = replacement_plan(old, new)
     notes = f'doc/RELEASE_NOTES_{new}.md'
+    print(f'{old} -> {new} :')
+    apply_changes(changes, arguments.dry_run)
+    if not (ROOT / notes).is_file():
+        print(f'  {notes} (nouveau, à compléter)')
+    if arguments.dry_run:
+        print('\nRien écrit (--dry-run).')
+        return 0
     if not (ROOT / notes).is_file():
         write(notes, release_notes(old, new))
-    current, problems = check(new)
+    _, problems = check(new)
     print(f'\n{old} -> {new}')
     if problems:
         print('À corriger :')

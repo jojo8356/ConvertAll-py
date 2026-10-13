@@ -120,10 +120,10 @@ def test_glibc_baseline_comes_from_elf_requirements_not_platform(bundle):
 
 
 def test_deb_uses_system_dependencies_without_copying_a_frozen_runtime(tmp_path):
-    stage = packages.stage_deb(tmp_path / 'deb', ROOT, '0.9.1',
+    stage = packages.stage_deb(tmp_path / 'deb', ROOT, '0.9.2',
                                'Test Maintainer <test@example.invalid>')
     control = (stage / 'DEBIAN/control').read_text(encoding='utf-8')
-    assert 'Package: convertall\nVersion: 0.9.1-1\nArchitecture: all\n' in control
+    assert 'Package: convertall\nVersion: 0.9.2-1\nArchitecture: all\n' in control
     assert 'Depends: ' + ', '.join(packages.DEBIAN_DEPENDENCIES) in control
     assert 'python3-pyqt6 (>= 6.4.2)' in control
     assert 'libc6' not in control and 'Installed-Size: ' in control
@@ -146,7 +146,7 @@ def test_deb_uses_system_dependencies_without_copying_a_frozen_runtime(tmp_path)
 @pytest.mark.parametrize('maintainer', ['missing-email', 'Name <mail>\nDepends: bad', 'Name <mail>'])
 def test_deb_control_rejects_header_injection(maintainer):
     with pytest.raises(ReleaseError, match='Invalid Debian'):
-        packages.deb_control('0.9.1', maintainer, 1)
+        packages.deb_control('0.9.2', maintainer, 1)
 
 
 def test_appdir_keeps_full_bundle_icon_and_argument_forwarding(bundle, tmp_path):
