@@ -66,7 +66,7 @@ NEW_NAME='${TARGET_NAME}'
 NEW_EMAIL='${TARGET_EMAIL}'
 map_email() {
     case "\$1" in
-$(for address in "${REPLACE_EMAILS[@]}"; do printf '        %s) printf %%s "\$NEW_EMAIL" ;;\n' "$address"; done)
+$(for address in "${REPLACE_EMAILS[@]}"; do printf '        %s) printf %%s "$NEW_EMAIL" ;;\n' "$address"; done)
         *) return 1 ;;
     esac
 }
