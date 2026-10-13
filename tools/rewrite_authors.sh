@@ -83,10 +83,12 @@ printf 'Cible        : %s <%s>\n' "$TARGET_NAME" "$TARGET_EMAIL"
 printf 'Adresses     : %s\n' "${REPLACE_EMAILS[*]}"
 printf 'Branche      : %s\n\n' "$BRANCH"
 printf 'Commits concernés sur cette branche :\n'
-AFFECTED=$(git log --format='%H' --author="$(printf '%s' "${REPLACE_EMAILS[0]}")" \
-                 --committer="$(printf '%s' "${REPLACE_EMAILS[0]}")" "$BRANCH")
-for address in "${REPLACE_EMAILS[@]:1}"; do
-    AFFECTED+=$'\n'"$(git log --format='%H' --author="$address" --committer="$address" "$BRANCH")"
+# --no-use-mailmap est indispensable : git applique le .mailmap à --author, donc
+# la recherche des anciennes adresses ne trouverait plus rien.
+AFFECTED=''
+for address in "${REPLACE_EMAILS[@]}"; do
+    AFFECTED+=$(git log --no-use-mailmap --format='%H' --author="$address" \
+                        --committer="$address" "$BRANCH")$'\n'
 done
 AFFECTED=$(printf '%s\n' "$AFFECTED" | sed '/^$/d' | sort -u)
 if [[ -z "$AFFECTED" ]]; then
@@ -94,7 +96,7 @@ if [[ -z "$AFFECTED" ]]; then
     exit 0
 fi
 printf '%s\n' "$AFFECTED" | while read -r sha; do
-    git log -1 --format='  %h  %an <%ae>  %s' "$sha" | cut -c1-96
+    git log -1 --no-use-mailmap --format='  %h  %an <%ae>  %s' "$sha" | cut -c1-96
 done
 printf '\n  soit %s commit(s).\n' "$(printf '%s\n' "$AFFECTED" | wc -l)"
 
@@ -133,8 +135,10 @@ fi
 
 AFTER=$(git rev-parse "$BRANCH")
 printf '\nAncien sommet : %s\nNouveau       : %s\n\n' "${BEFORE:0:12}" "${AFTER:0:12}"
-printf 'Vérification des auteurs restants :\n'
-git log --format='  %an <%ae>' "$BRANCH" | sort | uniq -c | sort -rn
+printf 'Auteurs réels restants (identités brutes, sans mailmap) :\n'
+git log --no-use-mailmap --format='  %an <%ae>' "$BRANCH" | sort | uniq -c | sort -rn
+printf '\nVue affichée, mailmap appliqué :\n'
+git log --format='  %aN <%aE>' "$BRANCH" | sort | uniq -c | sort -rn
 printf '\nLes tags n’ont pas bougé :\n'
 git for-each-ref refs/tags --format='  %(refname:short) -> %(objectname:short)'
 
