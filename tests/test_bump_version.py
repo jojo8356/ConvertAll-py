@@ -83,6 +83,27 @@ def test_the_manual_header_is_not_the_program_version_in_the_text(project):
     assert NEXT in read(project, 'doc/README_ru.html')
 
 
+def test_the_readme_banner_and_state_line_follow_the_version(project):
+    """The README announces the version twice; its history must not move."""
+    history = [line for line in read(project, 'README.md').splitlines()
+               if 'RELEASE_NOTES_' in line]
+    assert history, 'the README links to the previous release notes'
+    assert bump(project, NEXT) == 0
+    readme = read(project, 'README.md')
+    assert readme.splitlines()[0].endswith(NEXT), readme.splitlines()[0]
+    assert f'**État : {NEXT} ' in readme
+    assert all(line in readme for line in history)
+    assert '0.8.0' in readme
+
+
+def test_check_refuses_a_readme_left_at_the_previous_release(project):
+    assert bump(project, NEXT) == 0
+    readme = read(project, 'README.md')
+    write(project, 'README.md', readme.replace(f'Qt6 {NEXT}', f'Qt6 {CURRENT}', 1))
+    _, problems = bump_version.check(NEXT)
+    assert any('README.md' in problem and CURRENT in problem for problem in problems)
+
+
 def test_the_changelog_of_the_previous_release_is_history_not_a_pinned_copy(project):
     assert bump(project, NEXT) == 0
     assert (project / f'doc/RELEASE_NOTES_{CURRENT}.md').is_file()

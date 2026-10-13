@@ -1,10 +1,10 @@
-# ConvertAll-py — Qt6 0.9.1
+# ConvertAll-py — Qt6 0.9.2
 
 ConvertAll permet de combiner librement les unités : pouces par décennie,
 mètres-livres, milles nautiques au cube… Ce dépôt maintient l'application
 **Python / PyQt6**, distincte de l'application Flutter actuelle de l'amont.
 
-**État : 0.9.1 candidate, `.deb` natif léger à revalider.** Le tag Qt6
+**État : 0.9.2 candidate, `.deb` natif léger à revalider.** Le tag Qt6
 `v0.9.0` reste au SHA `a3b93db` ; ses résultats ne valident pas ce nouveau
 commit. La CI ajoute Debian Bookworm/Trixie avec Qt/PyQt6 fournis par APT,
 sans remplacer les huit jobs du profil épinglé et les deux bundles.

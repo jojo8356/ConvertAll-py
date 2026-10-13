@@ -33,12 +33,17 @@ DESCRIPTION = ('met à jour la version partout où elle est épinglée, ou véri
                'sont cohérentes')
 
 ROOT = Path(__file__).resolve().parent.parent
-# Every manual announces the version in one line, for instance
-#   <p><strong>Python/Qt6 fork 0.9.2 (validation pending):</strong>
-# Anchoring on that line is what keeps the generator meta tag of README_ru.html
-# out of the way: its first bare x.y.z is 'LibreOffice 5.4.6.2'. A 0.x.y-only
+# The version lines that are labelled, per file glob. A bare x.y.z pattern is
+# not usable: README.md links to doc/RELEASE_NOTES_0.9.1.md and compares itself
+# to the 0.8.0 benchmark, and the Russian manual carries 'LibreOffice 5.4.6.2' in
+# a generator meta tag that comes before its own banner. An earlier 0.x.y-only
 # pattern avoided that by accident, and broke on any 1.x version.
-MANUAL_HEADER = re.compile(r'(Python/Qt6 fork )(\d+\.\d+\.\d+)')
+ANCHORED = (
+    (re.compile(r'(Python/Qt6 fork )(\d+\.\d+\.\d+)'),
+     ('doc/README*.html', 'docs/README*.html')),
+    (re.compile(r'^(# ConvertAll-py[^\n]*?)(\d+\.\d+\.\d+)', re.M), ('README.md',)),
+    (re.compile(r'^(\*\*État : )(\d+\.\d+\.\d+)', re.M), ('README.md',)),
+)
 VERSION = re.compile(r'\d+\.\d+\.\d+')
 # A version token, not a version-shaped substring of something else: '0.9.10'
 # does not match '0.9.1', but the Debian revision ('0.9.1-1') and asset names
@@ -79,10 +84,12 @@ def source_version():
     return match.group(1)
 
 
-def html_manuals():
-    for pattern in ('doc/README*.html', 'docs/README*.html'):
-        for path in sorted(ROOT.glob(pattern)):
-            yield path.relative_to(ROOT)
+def anchored_lines():
+    """[(path, pattern)] for the labelled version lines, in file order."""
+    for pattern, globs in ANCHORED:
+        for glob in globs:
+            for path in sorted(ROOT.glob(glob)):
+                yield path.relative_to(ROOT), pattern
 
 
 def iss_files():
@@ -105,28 +112,36 @@ def rewrite_tokens(text, old, new):
 
 
 def replacement_plan(old, new):
-    """[(path, new_text, note)] for every file that must change."""
-    changes = []
-    for path in html_manuals():
-        text = read(path)
-        match = MANUAL_HEADER.search(text)
+    """[(path, new_text, note)] for every file that must change.
+
+    README.md is anchored twice (banner and state line), so the plan is
+    accumulated per file: two independent writes would drop the first one.
+    """
+    updated, notes = {}, {}
+
+    def stage(path, content, note):
+        updated[path], _ = content, notes.setdefault(path, []).append(note)
+
+    for path, pattern in anchored_lines():
+        text = updated.get(path, read(path))
+        match = pattern.search(text)
         if match is None:
-            raise SystemExit(f'{path}: no "Python/Qt6 fork x.y.z" line found')
+            raise SystemExit(f'{path}: no version line found ({pattern.pattern})')
         if match.group(2) != new:
-            changes.append((path, text[:match.start(2)] + new + text[match.end(2):],
-                            f'en-tête {match.group(2)} -> {new}'))
+            stage(path, text[:match.start(2)] + new + text[match.end(2):],
+                  f'en-tête {match.group(2)} -> {new}')
     for path in iss_files():
-        text = read(path)
+        text = updated.get(path, read(path))
         replaced = rewrite_tokens(text, old, new)
         if replaced != text:
-            changes.append((path, replaced, f'{old} -> {new}'))
+            stage(path, replaced, f'{old} -> {new}')
     for path in managed_python():
-        text = read(path)
+        text = updated.get(path, read(path))
         replaced = rewrite_tokens(text, old, new)
         if replaced != text:
             count = len(re.findall(TOKEN.format(re.escape(old)), text))
-            changes.append((path, replaced, f'{count} occurrence(s) {old} -> {new}'))
-    return changes
+            stage(path, replaced, f'{count} occurrence(s) {old} -> {new}')
+    return [(path, updated[path], ' ; '.join(notes[path])) for path in updated]
 
 
 def rendered_version_mismatches(version):
@@ -173,10 +188,10 @@ def check(expected=None):
             problems.append(f'{path}: AppVersion is not {current}')
         if f'convertall-{current}-install' not in text:
             problems.append(f'{path}: installer file name is not {current}')
-    for path in html_manuals():
-        match = MANUAL_HEADER.search(read(path))
+    for path, pattern in anchored_lines():
+        match = pattern.search(read(path))
         if match is None:
-            problems.append(f'{path}: no "Python/Qt6 fork x.y.z" line found')
+            problems.append(f'{path}: no version line found ({pattern.pattern})')
         elif match.group(2) != current:
             problems.append(f'{path}: announces {match.group(2)} instead of {current}')
     problems.extend(rendered_version_mismatches(current))
@@ -257,7 +272,7 @@ def main():
             for problem in problems:
                 print(f'  - {problem}')
             return 1
-        print('Cohérence : OK (source, .iss, manuels HTML, tests, notes de version)')
+        print('Cohérence : OK (source, .iss, manuels HTML, README, tests, notes de version)')
         return 0
 
     new = arguments.version

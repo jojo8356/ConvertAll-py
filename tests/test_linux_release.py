@@ -357,7 +357,7 @@ def test_a_maintainer_can_be_exported_once_for_every_run(monkeypatch):
 
 
 def test_a_missing_maintainer_says_exactly_what_to_do(monkeypatch):
-    """The failure that stopped the 0.9.1 release must be self-explaining."""
+    """The missing-maintainer failure of the previous release must be self-explaining."""
     monkeypatch.delenv('CONVERTALL_MAINTAINER', raising=False)
 
     def no_identity(*arguments, **kwargs):
