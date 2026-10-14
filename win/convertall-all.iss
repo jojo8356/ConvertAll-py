@@ -5,7 +5,7 @@
 
 [Setup]
 AppName=ConvertAll
-AppVersion=0.9.2
+AppVersion=0.9.3
 MinVersion=10.0.17763
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -13,7 +13,7 @@ DefaultDirName={pf}\ConvertAll
 DefaultGroupName=ConvertAll
 DisableProgramGroupPage=yes
 OutputDir=.
-OutputBaseFilename=convertall-0.9.2-install-all
+OutputBaseFilename=convertall-0.9.3-install-all
 PrivilegesRequired=admin
 SetupIconFile=convertall.ico
 Uninstallable=IsTaskSelected('adduninstall')

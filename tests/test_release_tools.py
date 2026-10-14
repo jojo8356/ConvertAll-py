@@ -141,7 +141,7 @@ def test_gate_refuses_ci_sha_mismatch(tmp_path, monkeypatch):
 
 @pytest.fixture
 def frozen_runtime_info():
-    return {'application': 'ConvertAll', 'version': '0.9.2', 'binding': 'PyQt6',
+    return {'application': 'ConvertAll', 'version': '0.9.3', 'binding': 'PyQt6',
             'pyqt_binding': '6.11.0', 'qt_runtime': '6.11.2',
             'sip_package': '13.13.0', 'sip_generator': '6.17.0'}
 

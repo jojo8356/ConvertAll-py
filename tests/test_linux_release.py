@@ -120,10 +120,10 @@ def test_glibc_baseline_comes_from_elf_requirements_not_platform(bundle):
 
 
 def test_deb_uses_system_dependencies_without_copying_a_frozen_runtime(tmp_path):
-    stage = packages.stage_deb(tmp_path / 'deb', ROOT, '0.9.2',
+    stage = packages.stage_deb(tmp_path / 'deb', ROOT, '0.9.3',
                                'Test Maintainer <test@example.invalid>')
     control = (stage / 'DEBIAN/control').read_text(encoding='utf-8')
-    assert 'Package: convertall\nVersion: 0.9.2-1\nArchitecture: all\n' in control
+    assert 'Package: convertall\nVersion: 0.9.3-1\nArchitecture: all\n' in control
     assert 'Depends: ' + ', '.join(packages.DEBIAN_DEPENDENCIES) in control
     assert 'python3-pyqt6 (>= 6.4.2)' in control
     assert 'libc6' not in control and 'Installed-Size: ' in control
@@ -146,7 +146,7 @@ def test_deb_uses_system_dependencies_without_copying_a_frozen_runtime(tmp_path)
 @pytest.mark.parametrize('maintainer', ['missing-email', 'Name <mail>\nDepends: bad', 'Name <mail>'])
 def test_deb_control_rejects_header_injection(maintainer):
     with pytest.raises(ReleaseError, match='Invalid Debian'):
-        packages.deb_control('0.9.2', maintainer, 1)
+        packages.deb_control('0.9.3', maintainer, 1)
 
 
 def test_appdir_keeps_full_bundle_icon_and_argument_forwarding(bundle, tmp_path):
@@ -866,7 +866,7 @@ def test_an_intercepted_appimage_skips_the_layers_that_run_it():
     assert release_qt6.runtime_launch_plan(handlers) == ['pinned runtime']
     assert release_qt6.runtime_launch_plan({}) == ['direct', 'local copy', 'pinned runtime']
     # With a runtime the handler claims as well, no layer may execute anything:
-    # the 0.9.2 run on a host with AppImageLauncher waited 180s on that runtime
+    # the 0.9.3 run on a host with AppImageLauncher waited 180s on that runtime
     # while the payload that never gets executed was the only usable proof left.
     assert release_qt6.runtime_launch_plan(handlers, True) == []
     assert release_qt6.runtime_launch_plan({}, True) == ['direct', 'local copy', 'pinned runtime']
@@ -893,7 +893,7 @@ def test_intercepted_extraction_never_executes_the_claimed_runtime(monkeypatch, 
                                         runtime=runtime, intercepted=True)
     assert (root / 'AppRun').is_file()
     # A warning that starts with an empty reason explains nothing (seen in the
-    # 0.9.2 local log as "WARNING: ; retrying through the pinned runtime...").
+    # 0.9.3 local log as "WARNING: ; retrying through the pinned runtime...").
     warnings = [line for line in capsys.readouterr().out.splitlines() if line.startswith('WARNING')]
     assert warnings and all('WARNING: ;' not in line for line in warnings)
 
